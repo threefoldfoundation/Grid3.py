@@ -14,31 +14,49 @@ def replace(dictionary, replacements):
             dictionary[replacement[1]] = dictionary.pop(replacement[0])
 
 class Farm():
-    def __init__(self, **kwds):
-        replacements = [('farmID', 'farmId'),
-                        ('twinID', 'twinId'),
-                        ('pricingPolicyID', 'pricingPolicyId'),
-                        ('certificationType', 'certification'),
-                       ]
-        replace(kwds, replacements)
+    def __init__(self, *args, **kwds):
+        # Take either a dict as positional arg or kwds
+        if args:
+            kwds = args[0]
+
+        self.synonyms = {'farmID': 'farmId',
+                        'twinID': 'twinId',
+                        'pricingPolicyID': 'pricingPolicyId',
+                        'certificationType': 'certification',}
+
+        self.synonyms.update(dict(map(reversed, self.synonyms.items()))) 
+        
         self.__dict__.update(kwds)
+
+    def __getattr__(self, name):
+        try:
+            name = self.synonyms[name]
+            return self.__dict__[name]
+        except AttributeError:
+            raise AttributeError("'Farm' object has no attribute '{}'".format(name))
 
 class Node():
     def __init__(self, *args, **kwds):
         # Take either a dict as positional arg or kwds
         if args:
             kwds = args[0]
-        # TODO: make replacement synonyms.
-        replacements = [('nodeID', 'nodeId'),
-                        ('farmID', 'farmId'),
-                        ('twinID', 'twinId'),
-                        ('certificationType', 'certification'),
-                       ]
-        replace(kwds, replacements)
+        self.synonyms = {'nodeID': 'nodeId',
+                         'farmID': 'farmId',
+                         'twinID': 'twinId',
+                         'certificationType': 'certification'}
+        # Add the reverse mappings too
+        self.synonyms.update(dict(map(reversed, self.synonyms.items()))) 
         # TODO: do a "casting" system based on key/type tuples
         if 'uptime' in kwds:
             kwds['uptime'] = int(kwds['uptime'])
         self.__dict__.update(kwds)
+
+    def __getattr__(self, name):
+        try:
+            name = self.synonyms[name]
+            return self.__dict__[name]
+        except AttributeError:
+            raise AttributeError("'Node' object has no attribute '{}'".format(name))
 
     def __eq__(self, other):
         return self.nodeId == other.nodeId
@@ -60,8 +78,22 @@ class Node():
         return 'Node(nodeId: {})'.format(nodeId)
 
 class Twin():
-    def __init__(self, **kwds):
+    def __init__(self, *args, **kwds):
+        # Take either a dict as positional arg or kwds
+        if args:
+            kwds = args[0]
+        self.synonyms = {'twinID': 'twinId',
+                         'accountID': 'accountId'}
+        # Add the reverse mappings too
+        self.synonyms.update(dict(map(reversed, self.synonyms.items()))) 
         self.__dict__.update(kwds)
+
+    def __getattr__(self, name):
+        try:
+            name = self.synonyms[name]
+            return self.__dict__[name]
+        except AttributeError:
+            raise AttributeError("'Twin' object has no attribute '{}'".format(name))
 
 class GridNetwork():
     """
