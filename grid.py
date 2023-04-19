@@ -1,5 +1,6 @@
-import requests
+import threading, functools
 
+import requests
 import graphql
 from gql import Client, gql
 from gql.transport.requests import RequestsHTTPTransport
@@ -180,10 +181,18 @@ class GraphQL():
         self.client = Client(transport=self.transport,
                              fetch_schema_from_transport=True)
 
+        # Really meant as a convenience for interactive use, probably not safe, or needed, for code that immediately runs queries. Actually, seems there's a lock on opening the transport, so it's not unsafe. We get some errors if we try to do stuff that requires the schema too soon, but do we really want a locking mechanism in here?
         if fetch_schema:
-            self.fetch_schema()
+            threading.Thread(target=self.fetch_schema).start()
 
         self._dsl_schema = None
+
+    def __getattr__(self, name):
+        # We don't support the forms ending in "ById" and "ByUniqueInput", cause, who uses em?
+        if name in self.client.schema.query_type.fields and "By" not in name:
+            return functools.partial(self.build_dsl_query, name)
+        else:
+            raise AttributeError
 
     def fetch_schema(self):
         """Force fetching the schema. Client also does this automatically when executing queries, so is only needed for building DSL queries before any other exeuction."""
@@ -307,6 +316,68 @@ class GraphQL():
             except AttributeError:
                 return gql_type
 
+    def build_dsl_query(self, query_field_name, outputs, **kwds):
+        """
+        Generate queries using "domain specific language" features.
+
+        This function generates queries in a convenient way that covers most use cases of our schema which corresponds to the data types in TF Chain. Here's a rough sketch of how the arguments are rendered into a query:
+
+        query {
+          query_field_name(kwds){
+            output{
+              output_subfield
+            }
+          }
+        }
+        """
+        if not self.client.schema:
+            self.fetch_schema()
+
+        query_field = self.client.schema.query_type.fields[query_field_name]
+        query_where_fields = query_field.args['where'].type.fields
+
+        arguments = {}
+        for arg in ('limit', 'offset', 'orderBy'):
+            if arg in kwds:
+                arguments[arg] = kwds.pop(arg)
+        
+        # TODO: also validate that arguments to 'orderBy' are valid, and maybe provide some "autocorrection", such that nodeID=1 becomes nodeID_eq=1 and nodeID=[1,2,3,4] becomes nodeID_in=[1,2,3,4]
+        # Also, validate that subfields and their inputs are valid, eg: power={'target': 'down', 'state': 'down'})
+        for arg in kwds:
+            if arg not in query_where_fields.keys():
+                raise graphql.error.GraphQLError('Not a valid "where" field: ' + arg)
+        arguments['where'] = kwds
+        query = self.dsl_schema.Query.__getattr__(query_field_name)(**arguments)
+
+        # Return types are composite of NonNull and List, we just want the root
+        return_type = self.unwrap_type(query_field.type)
+        return_type_dsl = self.dsl_schema.__getattr__(return_type.name)
+
+        # Outputs are either a string or a single item dict in the form of {'name': ['subfields', ...]}
+        # For fields with subfields, specifying them via the dict form is optional and all non compound subfields except 'id' are returned
+        for output in outputs:
+            try:
+                name, subfields = output.popitem()
+            except AttributeError:
+                name, subfields = output, None
+
+            field_type = self.unwrap_type(return_type.fields[name].type)
+           
+            if graphql.type.is_scalar_type(field_type):
+                query.select(return_type_dsl.__getattr__(name))
+            elif subfields:
+                subfields = [self.dsl_schema.__getattr__(field_type.name).__getattr__(name) for name in subfields]
+                query.select(return_type_dsl.__getattr__(name).select(*subfields))
+            else:
+                subfields = []
+                for subfield_name, subfield in field_type.fields.items():
+                    subfield_type = self.unwrap_type(subfield.type)
+                    if graphql.type.is_scalar_type(subfield_type) and not subfield_name == 'id':
+                        subfields.append(self.dsl_schema.__getattr__(field_type.name).__getattr__(subfield_name))
+                query.select(return_type_dsl.__getattr__(name).select(*subfields))
+
+        return self.execute_dsl_query(query)
+
     def nodes(self, outputs, **kwds):
         """
         Build and execute a query dynamically to fetch node data
@@ -360,6 +431,7 @@ class GraphQL():
                 arguments[arg] = kwds.pop(arg)
         
         # TODO: also validate that arguments to 'orderBy' are valid, and maybe provide some "autocorrection", such that nodeID=1 becomes nodeID_eq=1 and nodeID=[1,2,3,4] becomes nodeID_in=[1,2,3,4]
+        # Also, validate that subfields and their inputs are valid, eg: power={'target': 'down', 'state': 'down'})
         for arg in kwds:
             if arg not in query_where_fields.keys():
                 raise graphql.error.GraphQLError('Not a valid "where" field: ' + arg)
@@ -393,8 +465,3 @@ class GraphQL():
                 query.select(self.dsl_schema.Node.__getattr__(name).select(*subfields))
 
         return self.execute_dsl_query(query)
-
-    def __getattr__(self, name):
-        # Want to generalize to the full schema. We have two kinds of fields, ones that return lists and ones that return single objects. These also have (?) consistent arg specs
-        if name in self.client.schema.query_type.fields:
-            pass
