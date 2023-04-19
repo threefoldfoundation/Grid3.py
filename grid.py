@@ -218,96 +218,6 @@ class GraphQL():
 
     def execute_dsl_query(self, query):
         return self.client.execute(dsl_gql(DSLQuery(query)))
-
-    def get_farm(self, farm_id):
-        query = gql(
-        """
-        query GetFarm ($farm_id: Int) {
-            farms(where: {farmID_eq: $farm_id}) {
-                certification
-                dedicatedFarm
-                farmID
-                name
-                pricingPolicyID
-                stellarAddress
-                twinID
-            }
-        }
-        """
-        )
-
-        params = {'farm_id': farm_id}
-        result = self.client.execute(query, variable_values=params)
-        return result
-
-    def get_farms(self):
-        query = gql(
-        """
-        query GetFarms {
-            farms {
-                certification
-                dedicatedFarm
-                farmID
-                name
-                pricingPolicyID
-                stellarAddress
-                twinID
-            }
-        }
-        """
-        )
-
-        result = self.client.execute(query)
-        return result
-
-    def get_node(self, node_id):
-        query = gql(
-        """
-        query GetNode ($node_id: Int){
-        nodes(where: {nodeID_eq: $node_id}) {
-            certification
-            city
-            connectionPrice
-            country
-            created
-            createdAt
-            farmID
-            farmingPolicyId
-            gridVersion
-            id
-            location {
-                latitude
-                longitude
-            }
-            nodeID
-            secure
-            serialNumber
-            twinID
-            updatedAt
-            uptime
-            virtualized
-            interfaces {
-                ips
-                mac
-                name
-            }
-            publicConfig {
-                domain
-                gw4
-                gw6
-                ipv4
-                ipv6
-            }
-            resourcesTotal {
-                cru
-                hru
-                mru
-                sru
-            }
-        }
-        }
-        """
-        )
     
     def unwrap_type(self, gql_type):
         while 1:
@@ -378,7 +288,8 @@ class GraphQL():
 
         return self.execute_dsl_query(query)
 
-    def nodes(self, outputs, **kwds):
+
+        # Belonged to the old "node" specific function. Some good stuff to save for docstring above or other docs
         """
         Build and execute a query dynamically to fetch node data
 
@@ -418,50 +329,3 @@ class GraphQL():
 
         Node that 'id', a TF Chain identifier which is usually meaningless to clients, is omitted by default.
         """
-
-        if not self.client.schema:
-            self.fetch_schema()
-
-        query_field = self.client.schema.query_type.fields['nodes']
-        query_where_fields = query_field.args['where'].type.fields
-
-        arguments = {}
-        for arg in ('limit', 'offset', 'orderBy'):
-            if arg in kwds:
-                arguments[arg] = kwds.pop(arg)
-        
-        # TODO: also validate that arguments to 'orderBy' are valid, and maybe provide some "autocorrection", such that nodeID=1 becomes nodeID_eq=1 and nodeID=[1,2,3,4] becomes nodeID_in=[1,2,3,4]
-        # Also, validate that subfields and their inputs are valid, eg: power={'target': 'down', 'state': 'down'})
-        for arg in kwds:
-            if arg not in query_where_fields.keys():
-                raise graphql.error.GraphQLError('Not a valid "where" field: ' + arg)
-        arguments['where'] = kwds
-        query = self.dsl_schema.Query.nodes(**arguments)
-
-        return_type = self.client.schema.type_map['Node']
-        # or self.dsl_schema.Node._type
-
-        # Outputs are either a string or a single item dict in the form of {'name': ['subfields', ...]}
-        # For fields with subfields, specifying them via the dict form is optional and all non compound subfields except 'id' are returned
-        for output in outputs:
-            try:
-                name, subfields = output.popitem()
-            except AttributeError:
-                name, subfields = output, None
-
-            field_type = self.unwrap_type(return_type.fields[name].type)
-           
-            if graphql.type.is_scalar_type(field_type):
-                query.select(self.dsl_schema.Node.__getattr__(name))
-            elif subfields:
-                subfields = [self.dsl_schema.__getattr__(field_type.name).__getattr__(name) for name in subfields]
-                query.select(self.dsl_schema.Node.__getattr__(name).select(*subfields))
-            else:
-                subfields = []
-                for name, subfield in field_type.fields.items():
-                    subfield_type = self.unwrap_type(subfield.type)
-                    if graphql.type.is_scalar_type(subfield_type) and not name == 'id':
-                        subfields.append(self.dsl_schema.__getattr__(field_type.name).__getattr__(name))
-                query.select(self.dsl_schema.Node.__getattr__(name).select(*subfields))
-
-        return self.execute_dsl_query(query)
