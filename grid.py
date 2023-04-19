@@ -14,48 +14,82 @@ def replace(dictionary, replacements):
         if replacement[0] in dictionary:
             dictionary[replacement[1]] = dictionary.pop(replacement[0])
 
+def mirror(dictionary):
+    # Returns a dict that has a {value: key} for every {key: value} in the input
+    return dict(map(reversed, dictionary.items()))
+
+def cast_types(items, types, synonyms):
+    new_items = {}
+    for item in items:
+        if item in types:
+            new_items[item] = types[item](items[item])
+        elif item in synonyms:
+            new_items[item] = types[synonyms[item]](items[item])
+        else:
+            new_items[item] = items[item]
+    return new_items
+
 class Farm():
+    synonyms = {'farmID': 'farmId',
+                'twinID': 'twinId',
+                'pricingPolicyID': 'pricingPolicyId',
+                'certificationType': 'certification'}
+
+    synonyms.update(mirror(synonyms))
+
+    types = {'dedicatedFarm': bool,
+             'farmId': int,
+             'pricingPolicyID': int,
+             'twinId': int}
+
     def __init__(self, *args, **kwds):
         # Take either a dict as positional arg or kwds
         if args:
             kwds = args[0]
-
-        self.synonyms = {'farmID': 'farmId',
-                        'twinID': 'twinId',
-                        'pricingPolicyID': 'pricingPolicyId',
-                        'certificationType': 'certification',}
-
-        self.synonyms.update(dict(map(reversed, self.synonyms.items()))) 
         
+        kwds = cast_types(kwds, self.types, self.synonyms)
         self.__dict__.update(kwds)
 
     def __getattr__(self, name):
         try:
-            name = self.synonyms[name]
-            return self.__dict__[name]
+            return self.__dict__[self.synonyms[name]]
         except AttributeError:
             raise AttributeError("'Farm' object has no attribute '{}'".format(name))
 
 class Node():
+    synonyms = {'nodeID': 'nodeId',
+                'farmID': 'farmId',
+                'twinID': 'twinId',
+                'certificationType': 'certification'}
+
+    synonyms.update(mirror(synonyms))
+
+    types = {
+        'nodeID': int,
+        'connectionPrice': int,
+        'created': int,
+        'createdAt': int,
+        'farmID': int,
+        'farmingPolicyId': int,
+        'gridVersion': int,
+        'secure': bool,
+        'twinID': int,
+        'updatedAt': int,
+        'uptime': int,
+        'virtualized': bool
+      }
+
     def __init__(self, *args, **kwds):
         # Take either a dict as positional arg or kwds
         if args:
             kwds = args[0]
-        self.synonyms = {'nodeID': 'nodeId',
-                         'farmID': 'farmId',
-                         'twinID': 'twinId',
-                         'certificationType': 'certification'}
-        # Add the reverse mappings too
-        self.synonyms.update(dict(map(reversed, self.synonyms.items()))) 
-        # TODO: do a "casting" system based on key/type tuples
-        if 'uptime' in kwds:
-            kwds['uptime'] = int(kwds['uptime'])
+
+        kwds = cast_types(kwds, self.types, self.synonyms)
         self.__dict__.update(kwds)
 
     def __getattr__(self, name):
         try:
-            name = self.synonyms[name]
-            return self.__dict__[name]
+            return self.__dict__[self.synonyms[name]]
         except AttributeError:
             raise AttributeError("'Node' object has no attribute '{}'".format(name))
 
@@ -79,20 +113,26 @@ class Node():
         return 'Node(nodeId: {})'.format(nodeId)
 
 class Twin():
+    synonyms = {'twinID': 'twinId',
+                'accountID': 'accountId'}
+
+    synonyms.update(mirror(synonyms))
+
+    types = {
+        'gridVersion': int,
+        'twinID': int}
+
     def __init__(self, *args, **kwds):
         # Take either a dict as positional arg or kwds
         if args:
             kwds = args[0]
-        self.synonyms = {'twinID': 'twinId',
-                         'accountID': 'accountId'}
-        # Add the reverse mappings too
-        self.synonyms.update(dict(map(reversed, self.synonyms.items()))) 
+
+        kwds = cast_types(kwds, self.types, self.synonyms)
         self.__dict__.update(kwds)
 
     def __getattr__(self, name):
         try:
-            name = self.synonyms[name]
-            return self.__dict__[name]
+            return self.__dict__[self.synonyms[name]]
         except AttributeError:
             raise AttributeError("'Twin' object has no attribute '{}'".format(name))
 
