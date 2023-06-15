@@ -1,3 +1,6 @@
+from threading import Thread
+from queue import Queue
+
 import grid_proxy, grid_graphql
 
 class GridNetwork():
@@ -21,3 +24,24 @@ class GridNetwork():
             graphql_url = 'https://graphql.{}.grid.tf/graphql'.format(net)
             
         self.graphql = grid_graphql.GraphQL(graphql_url)
+
+    def get_node(self, node_id):
+        """
+        Return basic info about a node, or None if node id is invalid. Designed to be fast and responsive even if one data source is down.
+
+        Fun fact! My measured time for proxy requests is ~.2s and for GraphQL it's ~.6s (including time to build the query)
+        """
+
+        q = Queue()
+        Thread(None, return_to_queue, args=[self.proxy.get_node, q, node_id]).start()
+        Thread(None, return_to_queue, args=[self.graphql.nodes, q, ['nodeID', 'twinID', 'farmID']], kwargs={'nodeID_eq': node_id}).start()
+
+        reply = q.get()
+
+        if not reply or 'error' in reply:
+            return None
+        else:
+            return reply
+
+def return_to_queue(func, queue, *args, **kwds):
+    queue.put(func(*args, **kwds))
