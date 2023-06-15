@@ -15,27 +15,40 @@ class GraphQL():
         self.transport = RequestsHTTPTransport(url=url, verify=True, retries=3)
         self.client = Client(transport=self.transport,
                              fetch_schema_from_transport=True)
-
+        self.fetching_schema = False
         # Really meant as a convenience for interactive use, probably not safe, or needed, for code that immediately runs queries. Actually, seems there's a lock on opening the transport, so it's not unsafe. We get some errors if we try to do stuff that requires the schema too soon, but do we really want a locking mechanism in here?
         if fetch_schema:
-            threading.Thread(target=self.fetch_schema).start()
+            self.fetching_schema = True
+            self.schema_event = threading.Event()
+            threading.Thread(target=self.fetch_schema, args=[True]).start()
 
         self._dsl_schema = None
 
     def __getattr__(self, name):
         # We don't support the forms ending in "ById" and "ByUniqueInput", cause, who uses em?
+        if not self.client.schema:
+            self.fetch_schema()
+
         if name in self.client.schema.query_type.fields and "By" not in name:
             return functools.partial(self.build_dsl_query, name)
         else:
             raise AttributeError
 
-    def fetch_schema(self):
+    def fetch_schema(self, background=False):
         """Force fetching the schema. Client also does this automatically when executing queries, so is only needed for building DSL queries before any other exeuction."""
 
-        with self.client as client:
-            client.fetch_schema()
-
-        return self.client.schema
+        if background or not self.fetching_schema:
+            with self.client as client:
+                client.fetch_schema()
+            self.fetching_schema = False
+            try:
+                self.schema_event.set()
+            except AttributeError:
+                pass
+            return self.client.schema
+        elif self.fetching_schema:
+            self.schema_event.wait()
+            return self.client.schema
 
     def create_dsl_schema(self):
         if not self.client.schema:
