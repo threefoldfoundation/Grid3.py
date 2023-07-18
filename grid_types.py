@@ -85,9 +85,6 @@ class Node():
         except KeyError:
             raise AttributeError("'Node' object has no attribute '{}'".format(name))
 
-    def __eq__(self, other):
-        return self.nodeId == other.nodeId
-
     def __repr__(self):
         return self.__str__()
 
