@@ -86,7 +86,7 @@ class Node():
             raise AttributeError("'Node' object has no attribute '{}'".format(name))
 
     def __repr__(self):
-        return self.__str__()
+        return "Node({})".format(self.__dict__)
 
     def __str__(self):
         # Okay, maybe nodes should need a node id and farm id at creation?

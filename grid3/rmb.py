@@ -8,7 +8,7 @@ class RmbClient:
     """
     
     #rmb-peer uses "msgbus.system.reply" for it's own purposes, and farmerbot uses a new uuid for each message. Maybe should use a different approach
-    def __init__(self, redis_host='localhost', redis_port=6379, 
+    def __init__(self, redis_port=6379, redis_host='localhost',
                  reply_queue='msgbus.system.replies'):
         self.redis = redis.Redis(redis_host, port=redis_port, 
                                  decode_responses=True)

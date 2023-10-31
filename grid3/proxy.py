@@ -2,7 +2,7 @@ import requests
 from requests.adapters import HTTPAdapter, Retry
 
 
-from grid_types import Node, Farm, Twin
+from grid3.types import Node, Farm, Twin
 
 class GridProxy():
     """

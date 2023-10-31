@@ -1,7 +1,8 @@
 from threading import Thread
 from queue import Queue
 
-import grid_proxy, grid_graphql
+import grid3.proxy
+import grid3.graphql
 
 class GridNetwork():
     """
@@ -16,14 +17,14 @@ class GridNetwork():
         else:
             proxy_url = 'https://gridproxy.{}.grid.tf/'.format(net)
 
-        self.proxy = grid_proxy.GridProxy(proxy_url)
+        self.proxy = grid3.proxy.GridProxy(proxy_url)
 
         if net == 'main':
             graphql_url = 'https://graphql.grid.tf/graphql'
         else:
             graphql_url = 'https://graphql.{}.grid.tf/graphql'.format(net)
             
-        self.graphql = grid_graphql.GraphQL(graphql_url)
+        self.graphql = grid3.graphql.GraphQL(graphql_url)
 
     def get_node(self, node_id):
         """
