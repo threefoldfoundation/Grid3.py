@@ -11,8 +11,6 @@ packages = [{include = "grid3"}]
 python = "^3.0"
 requests = "^2.31.0"
 gql = {extras = ["requests"], version = "^3.4.1"}
-substrate-interface = "^1.7.4"
-
 
 [build-system]
 requires = ["poetry-core"]
