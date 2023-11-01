@@ -16,13 +16,13 @@ pip install grid3
 
 ## Quick tour
 
-With grid3.py, you can easily answer questions like, how many nodes are currently in the standby state that were online in the last 36 hours?
+With the `graphql` module, you can easily answer questions like, how many nodes are currently in the standby state that were online in the last 36 hours?
 
 ```
 import time, grid3.network
 mainnet = grid3.network.GridNetwork()
-sleepers = mainnet.graphql.nodes(['nodeID'], power={'state': 'Down'}, updatedAt_gt=int(time.time()) - 24 * 60 * 60)
-len(sleepers)
+sleepers = mainnet.graphql.nodes(['nodeID'], power={'state_eq': 'Down'}, updatedAt_gt=int(time.time()) - 24 * 60 * 60)
+print(len(sleepers))
 ```
 
 We just executed a query against the mainnet GraphQL endpoint `nodes` without even sweating a line break. Pretty cool!
