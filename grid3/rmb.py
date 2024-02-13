@@ -1,4 +1,4 @@
-import redis, json, base64, time, subprocess, socket
+import redis, json, base64, time, subprocess, socket, shutil
 
 class RmbClient:
     """
@@ -64,7 +64,7 @@ class RmbPeer:
     def __init__(self, secret, network='main', peer_logfile='rmb-peer.log', 
                  redis_port=6379, key_type='sr25519', tfchain_url=None, 
                  relay_url=None, redis_url=None, debug=False,
-                 path='./rmb-peer', spawn_redis=False, 
+                 path=None, spawn_redis=False, 
                  redis_logfile='redis.log'):
 
         self.redis_port = redis_port
@@ -97,6 +97,14 @@ class RmbPeer:
                 raise Exception('Redis port of None only valid when spawning redis')
             redis_url = 'redis://localhost:' + str(self.redis_port)
 
+        if path is None:
+            for p in ['rmb-peer', './rmb-peer']:
+                if shutil.which(p):
+                    path = p
+
+            if path is None:
+                raise Exception('rmb-peer binary not found')
+                
         call = [path]
 
         if debug:
