@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "grid3"
-version = "0.1.4"
+version = "0.1.5"
 description = "Modules for interacting with ThreeFold Grid v3."
 authors = ["Scott Yeager <scott@threefold.io>"]
 license = "Apache-2.0"
@@ -11,8 +11,13 @@ packages = [{include = "grid3"}]
 python = "^3.8"
 requests = "^2.31.0"
 gql = {extras = ["requests"], version = "^3.4.1"}
-redis = "^5.0.0"
+redis = {version = "^5.0.0", optional = true}
+substrate-interface = {version = "^1.7.7", optional = true}
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.extras]
+rmb = ["redis"]
+tfchain = ["substrate-interface"]
