@@ -99,7 +99,7 @@ class TFChain:
     def get_twin(self, twin_id):
         return self.sub.query('TfgridModule', 'Twins', [twin_id]).value
 
-    def get_twin(self, account_id, block_hash=None):
+    def get_twin_by_account(self, account_id, block_hash=None):
         return self.sub.query('TfgridModule', 'TwinIdByAccountID', [account_id], block_hash).value
 
     def get_balance(self, wallet_address):
