@@ -18,7 +18,7 @@ class Period:
                 timestamp = time.time()
             offset = (timestamp - FIRST_PERIOD_START_TIMESTAMP) // STANDARD_PERIOD_DURATION
             
-        self.start = FIRST_PERIOD_START_TIMESTAMP + (STANDARD_PERIOD_DURATION * offset)
+        self.start = int(FIRST_PERIOD_START_TIMESTAMP + (STANDARD_PERIOD_DURATION * offset))
         self.end = self.start + STANDARD_PERIOD_DURATION
 
     # The duration of the period in seconds.
