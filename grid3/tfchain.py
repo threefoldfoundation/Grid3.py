@@ -1,13 +1,14 @@
 import substrateinterface
 from substrateinterface.exceptions import SubstrateRequestException
 
-class TFChain:
+BLOCK_TIME_SECONDS = 6
 
+class TFChain:
     def __init__(self, network='main'):
         if network == 'main':
             url = 'wss://tfchain.grid.tf'
         else:
-            usrl = url='wss://tfchain.{}.grid.tf'.format(network)
+            url = url='wss://tfchain.{}.grid.tf'.format(network)
 
         self.sub = substrateinterface.SubstrateInterface(
                     url=url, 
@@ -27,30 +28,57 @@ class TFChain:
         Find the block that was created nearest to the provided timestamp
         """
         head = self.sub.get_block()
-        #
-        # Timestamp should always be first extrinsic (right?)
         head_time = self.get_timestamp(head) // 1000 # Convert to 10 digits
         head_number = head['header']['number']
-        #
+        
         time_diff = head_time - timestamp
         blocks_diff = time_diff // 6 # Six second blocks
         guess_number = head_number - blocks_diff
-        #
-        guess_block = self.sub.get_block(block_number=guess_number)
-        last_time_diff = time_diff
-        guess_block_time = self.get_timestamp(guess_block) // 1000
-        time_diff = guess_block_time - timestamp
-        #print(last_time_diff, time_diff, guess_number)
-        while abs(time_diff) < abs(last_time_diff):
-            blocks_diff = time_diff // 6 # Six second blocks
-            guess_number -= blocks_diff
+        
+        while blocks_diff > 0:
             guess_block = self.sub.get_block(block_number=guess_number)
-            last_time_diff = time_diff
             guess_block_time = self.get_timestamp(guess_block) // 1000
             time_diff = guess_block_time - timestamp
+            blocks_diff = time_diff // 6 # Six second blocks
+            guess_number -= blocks_diff
+            last_time_diff = time_diff
             #print(last_time_diff, time_diff, guess_number)
-        return guess_block
+        if time_diff < 4:
+            return guess_number
+        else:
+            return guess_number - 1
 
+    def find_block_minting(self, timestamp):
+        """This is a port of the code found in the tfchain client that's included in the minting repo: https://github.com/threefoldtech/minting_v3/blob/c93b0c69dffec68fc5f5478db6b999112a27ad02/client/src/client.rs#L121
+        
+        It's behavior is such that it always returns a future block that was not yet created at the given timestamp, even if the timestamp matches the block timestamp exactly. I'm not sure if that was intended, but in any case, this is the one to reach for when trying to get the block that is considered the beginning or end of a period for minting purposes
+        """
+        latest_ts = self.get_time_at_block() // 1000
+        if latest_ts < timestamp:
+            raise ValueError("can't fetch block for future timestamp")
+        height = 1
+        last_height = 1
+
+        while 1:
+            block_hash = self.sub.get_block_hash(height)
+            if block_hash is None:
+                height = (height + last_height) / 2
+                continue
+                
+            block_time = self.get_timestamp(self.sub.get_block(block_hash)) // 1000
+            time_delta = timestamp - block_time
+            block_delta = time_delta // BLOCK_TIME_SECONDS
+            if block_delta == 0:
+                if time_delta >= 0:
+                    return height + 1
+                else:
+                    return height
+                
+            if (height + block_delta) < 0:
+                raise RuntimeError()
+
+            last_height = height
+            height = height + block_delta
 
     def find_uptime_report(self, nodeid):
         head = self.sub.get_block_header()['header']
@@ -81,8 +109,9 @@ class TFChain:
                 continue
             break
 
-    def get_timestamp(self, block):
-        return block['extrinsics'][0].value['call']['call_args'][0]['value']
+    def get_balance(self, wallet_address):
+        result = self.sub.query('System', 'Account', [wallet_address])
+        return result.value['data']['free'] / 1e7
 
     def get_next_farm_id(self):
         return self.sub.query('TfgridModule', 'FarmID').value
@@ -93,18 +122,32 @@ class TFChain:
     def get_node(self, node_id):
         return self.sub.query('TfgridModule', 'Nodes', [node_id]).value
 
+    def get_node_id(self, block_hash=None):
+        # Returns highest assigned node id
+        return self.sub.query('TfgridModule', 'NodeID', [], block_hash).value
+
     def get_node_by_twin(self, twin_id, block_hash=None):
         return self.sub.query('TfgridModule', 'NodeIdByTwinID', [twin_id], block_hash).value
+
+    def get_node_power(self, node_id, block_hash=None):
+        return self.sub.query('TfgridModule', 'NodePower', [node_id], block_hash).value
+
+    def get_timestamp(self, block):
+        # Timestamp should always be first extrinsic (right?)
+        return block['extrinsics'][0].value['call']['call_args'][0]['value']
+
+    def get_time_at_block(self, block_number=None):
+        if block_number is None:
+            block = self.sub.get_block()
+        else:
+            block = self.sub.get_block(block_number=block_number)
+        return self.get_timestamp(block)
 
     def get_twin(self, twin_id):
         return self.sub.query('TfgridModule', 'Twins', [twin_id]).value
 
     def get_twin_by_account(self, account_id, block_hash=None):
         return self.sub.query('TfgridModule', 'TwinIdByAccountID', [account_id], block_hash).value
-
-    def get_balance(self, wallet_address):
-        result = self.sub.query('System', 'Account', [wallet_address])
-        return result.value['data']['free'] / 1e7
 
     def set_power_target(self, node_id, target):
         if self.keys is None:
