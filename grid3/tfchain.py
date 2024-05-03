@@ -25,7 +25,7 @@ class TFChain:
 
     def find_block(self, timestamp):
         """
-        Find the block that was created nearest to the provided timestamp
+        Find the block that was created nearest to the provided timestamp. Note that this can be a block created after the specified timestamp
         """
         head = self.sub.get_block()
         head_time = self.get_timestamp(head) // 1000 # Convert to 10 digits

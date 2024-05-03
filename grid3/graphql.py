@@ -17,6 +17,9 @@ class GraphQL():
                              fetch_schema_from_transport=True)
         self.fetching_schema = False
         # Really meant as a convenience for interactive use, probably not safe, or needed, for code that immediately runs queries. Actually, seems there's a lock on opening the transport, so it's not unsafe. We get some errors if we try to do stuff that requires the schema too soon, but do we really want a locking mechanism in here?
+        # Now I'm getting a lot of errors like below that go away if I fetch_schema first
+        # gql.transport.exceptions.TransportAlreadyConnected: Transport is already connected
+
         if fetch_schema:
             self.fetching_schema = True
             self.schema_event = threading.Event()
