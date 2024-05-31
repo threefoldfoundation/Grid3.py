@@ -62,7 +62,7 @@ class TFChain:
         while 1:
             block_hash = self.sub.get_block_hash(height)
             if block_hash is None:
-                height = (height + last_height) / 2
+                height = (height + last_height) // 2
                 continue
                 
             block_time = self.get_timestamp(self.sub.get_block(block_hash)) // 1000
@@ -116,11 +116,11 @@ class TFChain:
     def get_next_farm_id(self):
         return self.sub.query('TfgridModule', 'FarmID').value
 
-    def get_farm(self, farm_id):
-        return self.sub.query('TfgridModule', 'Farms', [farm_id]).value
+    def get_farm(self, farm_id, block_hash=None):
+        return self.sub.query('TfgridModule', 'Farms', [farm_id], block_hash).value
 
-    def get_node(self, node_id):
-        return self.sub.query('TfgridModule', 'Nodes', [node_id]).value
+    def get_node(self, node_id, block_hash=None):
+        return self.sub.query('TfgridModule', 'Nodes', [node_id], block_hash).value
 
     def get_node_id(self, block_hash=None):
         # Returns highest assigned node id
@@ -134,6 +134,7 @@ class TFChain:
 
     def get_timestamp(self, block):
         # Timestamp should always be first extrinsic (right?)
+        # Has millisecond precision, divide by 1000 to get seconds
         return block['extrinsics'][0].value['call']['call_args'][0]['value']
 
     def get_time_at_block(self, block_number=None):
