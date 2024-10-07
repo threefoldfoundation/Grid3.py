@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "grid3"
-version = "0.1.9"
+version = "0.2.0"
 description = "Modules for interacting with ThreeFold Grid v3."
 authors = ["Scott Yeager <scott@threefold.io>"]
 license = "Apache-2.0"
