@@ -1,20 +1,25 @@
-# Ported from https://github.com/threefoldtech/minting_v3/blob/master/minting/src/period.rs
-
 import time, datetime
 
 # Timestamp of the start of the first period.
 FIRST_PERIOD_START_TIMESTAMP = 1522501000
-# The duration of a standard period, as used by the minting payouts, in seconds.
+# The duration of a standard period, as used by minting, in seconds.
 STANDARD_PERIOD_DURATION = 24 * 60 * 60 * (365 * 3 + 366 * 2) // 60
 
 
-# A period represents a timestamp used by the minting process.
-#
-# Periods are defined such that there are roughly 12 periods per year.
 class Period:
-    # With no args, we get the current period. Otherwise, we get the period
-    # corresponding to the specified timestamp or offset. When offset is given,
-    # timestamp is ignored
+    """A class representing a minting period. When instantiated with no args,
+    the period containing the current point in time is returned. Otherwise,
+    either a timestamp or a minting period offset can be passed.
+
+    All calculations should match the canonical forms found in the minting
+    code:
+
+    https://github.com/threefoldtech/minting_v3/blob/master/minting/src/period.rs
+
+    There are 12 minting periods per year, with the boundaries falling
+    roughly at normal month boundaries.
+    """
+
     def __init__(self, timestamp=None, offset=None):
         if offset is None:
             if timestamp is None:
@@ -52,4 +57,3 @@ class Period:
         if ts <= self.end:
             raise ValueError("New start must be before period end")
         self.start = ts
-
