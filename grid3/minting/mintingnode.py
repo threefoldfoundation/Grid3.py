@@ -1,25 +1,23 @@
 """This module contains a port of the minting code found here:
 https://github.com/threefoldtech/minting_v3/blob/master/minting/src/main.rs
 
-It's translated line for line where possible, and Rustisms are converted
-into equivalent Python logic where necessary. The primary difference is
-that it works against a sqlite database containing relevant events
-collected from tfchain, rather than tfchain itself. Code for the "ingester"
-to create those databases is currently hosted on this repo:
+It's translated line for line where possible, and Rustisms are converted into
+equivalent Python logic where necessary. The primary difference is that it
+works against a sqlite database containing relevant events collected from
+tfchain, rather than tfchain itself. Code for the "ingester" to create those
+databases is currently hosted on this repo:
 
 https://github.com/threefoldfoundation/node-status-bot
 
-The tfchain code is already heavily nested, so it's left as top level
-functions rather than methods of the Minting Node class, to save another
-indentation level. For clarity, the code is split into three functions
-representing three logical phases of minting, though actual minting is a
-single function.
+The tfchain code is already heavily nested, so it's left as top level functions
+rather than methods of the Minting Node class, to save another indentation
+level. For clarity, the code is split into three functions representing three
+logical phases of minting, though actual minting is a single function.
 
-Our MintingNode does not implement most of the normal minting functions
-like determinting the payout owed. Instead, it focuses on uptime
-accrual and records a log of every uptime credit, along with any implied
-downtime. The node object holds this data as a property and can export it
-as a CSV file too.
+Our MintingNode does not implement most of the normal minting functions like
+determinting the payout owed. Instead, it focuses on uptime accrual and records
+a log of every uptime credit, along with any implied downtime. The node object
+holds this data as a property and can export it as a CSV file too.
 """
 
 import collections, csv
@@ -36,12 +34,17 @@ MAX_ALLOWED_BOOT_VIOLATIONS = 1
 POST_PERIOD = 60 * 60 * 27
 PERIOD_CATCH = 30
 
+# A primitive logging solution that supports either printing to stdout or
+# logging into a file
 logging_mode = "print"
+log_file = None
 
-# Supress all prints for now.
+
 def log(*args):
     if logging_mode == "print":
         print(*args)
+    elif logging_mode == "file":
+        log_file.write(" ".join([str(arg) for arg in args]))
 
 
 def process_period(node, events, period):
@@ -52,10 +55,10 @@ def process_period(node, events, period):
             reported_uptime = event.uptime
             # We are power managed and got a request to wake up.
             if node.power_managed is not None and node.power_manage_boot is not None:
-                # Ignore the event if it is sent after the node is supposed to go down,
-                # this will be accounted for once the node starts up again.
-                # For the node to have been properly power managed, it must be booted
-                # after it was set to down.
+                # Ignore the event if it is sent after the node is supposed to
+                # go down, this will be accounted for once the node starts up
+                # again. For the node to have been properly power managed, it
+                # must be booted after it was set to down.
                 time_set_down = node.power_managed
                 boot_request = node.power_manage_boot
                 if (current_time - reported_uptime) > time_set_down:
@@ -111,8 +114,9 @@ def process_period(node, events, period):
                                 time_delta, event.timestamp, "Crediting standby node"
                             )
 
-                    # Clear the fact that we got power managed, if it is still the case, it
-                    # will be set again in the proper event handler.
+                    # Clear the fact that we got power managed, if it is still
+                    # the case, it will be set again in the proper event
+                    # handler.
                     node.power_managed = None
                     node.power_manage_boot = None
                     node.uptime_info = (current_time, reported_uptime, total_uptime)
@@ -127,9 +131,9 @@ def process_period(node, events, period):
                     )
 
             # We are power managed but woke up without boot request. We
-            # explicitly ignore this: being put to sleep by the farmer
-            # bot requires a wakeup from the farmer bot. This case also
-            # means nodes just go to sleep anyhow.
+            # explicitly ignore this: being put to sleep by the farmer bot
+            # requires a wakeup from the farmer bot. This case also means
+            # nodes just go to sleep anyhow.
             elif node.power_managed is not None and node.power_manage_boot is None:
                 log(
                     datetime.fromtimestamp(event.timestamp),
@@ -138,8 +142,8 @@ def process_period(node, events, period):
                     ),
                 )
 
-            # We got a wakeup request from farmer bot but we are not
-            # sleeping due to the farmer bot. This should not happen.
+            # We got a wakeup request from farmer bot but we are not sleeping
+            # due to the farmer bot. This should not happen.
             elif node.power_managed is None and node.power_manage_boot is not None:
                 log(
                     datetime.fromtimestamp(event.timestamp),
@@ -155,14 +159,14 @@ def process_period(node, events, period):
                     )
                     report_delta = current_time - last_reported_at
                     uptime_delta = reported_uptime - last_reported_uptime
-                    # There are quite some situations here. Notice that due
-                    # to the blockchain only producing blocks every 6
-                    # seconds, and network delay + a host of other issues,
-                    # we will allow a node to report uptime with "grace
-                    # period" of a minute or so in either direction.
+                    # There are quite some situations here. Notice that due to
+                    # the blockchain only producing blocks every 6 seconds, and
+                    # network delay + a host of other issues, we will allow a
+                    # node to report uptime with "grace period" of a minute or
+                    # so in either direction.
                     #
-                    # 1. uptime_delta > report_delta + GRACE_PERIOD. Node
-                    # is talking rubish.
+                    # 1. uptime_delta > report_delta + GRACE_PERIOD. Node is
+                    # talking rubish.
                     if uptime_delta > report_delta + UPTIME_GRACE_PERIOD_SECONDS:
                         log(
                             datetime.fromtimestamp(event.timestamp),
@@ -199,19 +203,19 @@ def process_period(node, events, period):
                         else:
                             exit("node does not have boot time but does have uptime")
 
-                        # It is technically possible for the delta to be
-                        # less than 0 and within the expected time frame.
-                        # If nodes boot, send uptime, then immediately
-                        # reboot that is possible. In those cases, handle
-                        # that below, as that is the reboot detection.
+                        # It is technically possible for the delta to be less
+                        # than 0 and within the expected time frame. If nodes
+                        # boot, send uptime, then immediately reboot that is
+                        # possible. In those cases, handle that below, as that
+                        # is the reboot detection.
                         if uptime_delta > 0:
-                            # Simply add the uptime delta. If this is too
-                            # large or low by a couple of seconds it will
-                            # be corrected by the next pings anyhow. That
-                            # being said, we also limit the amount of
-                            # uptime credit to the uptime report interval +
-                            # grace period, as healthy nodes _must_ ping
-                            # every interval amount of time
+                            # Simply add the uptime delta. If this is too large
+                            # or low by a couple of seconds it will be
+                            # corrected by the next pings anyhow. That being
+                            # said, we also limit the amount of uptime credit
+                            # to the uptime report interval + grace period, as
+                            # healthy nodes _must_ ping every interval amount
+                            # of time
                             credit = min(
                                 uptime_delta,
                                 (
@@ -244,11 +248,11 @@ def process_period(node, events, period):
                             )
                             continue
 
-                    # 3. The difference in uptime is too low. Again there
-                    # are multiple scenarios. Either way we consider the
-                    # node rebooted. Depending on the reported uptime, the
-                    # node reports legit uptime, or it reports an uptime
-                    # which is too high.
+                    # 3. The difference in uptime is too low. Again there are
+                    # multiple scenarios. Either way we consider the node
+                    # rebooted. Depending on the reported uptime, the node
+                    # reports legit uptime, or it reports an uptime which is
+                    # too high.
                     #
                     #    1. Uptime is within bounds.
                     if reported_uptime <= report_delta:
@@ -281,10 +285,10 @@ def process_period(node, events, period):
                         continue
 
                     #    2. Uptime is actually higher than difference in
-                    #    timestamp, but not high enough to be valid. This
-                    #    means the node was supposedly rebooted _before_
-                    #    the previous uptime report, meaning either that
-                    #    report is invalid or this report is invalid.
+                    #    timestamp, but not high enough to be valid. This means
+                    #    the node was supposedly rebooted _before_ the previous
+                    #    uptime report, meaning either that report is invalid
+                    #    or this report is invalid.
                     if reported_uptime > last_reported_uptime:
                         log(
                             datetime.fromtimestamp(event.timestamp),
@@ -321,20 +325,19 @@ def process_period(node, events, period):
         elif isinstance(event, PowerTargetChanged):
             log(
                 datetime.fromtimestamp(event.timestamp),
-                "Power target changedfrom {} to {}\n".format(
+                "Power target changed from {} to {}\n".format(
                     node.power_target, event.target
                 ),
             )
-            # Remember a rising edge here to validate node actually boots.
-            # This is cleared when a node sends an uptime report of a
-            # _reboot_. It is allowed for this to happen if a rising edge
-            # is not consumed yet, in which case the new event is ignored,
-            # as we want to measure time from the first event and it is
-            # actually a good idea to send multiple of these if the node
-            # does not react. Of course, we also only want to track this if
-            # the node is currently power managed. While we shouldn't try
-            # to boot an online node, there is no _real_ harm in doing it
-            # anyway.
+            # Remember a rising edge here to validate node actually boots. This
+            # is cleared when a node sends an uptime report of a _reboot_. It
+            # is allowed for this to happen if a rising edge is not consumed
+            # yet, in which case the new event is ignored, as we want to
+            # measure time from the first event and it is actually a good idea
+            # to send multiple of these if the node does not react. Of course,
+            # we also only want to track this if the node is currently power
+            # managed. While we shouldn't try to boot an online node, there is
+            # no _real_ harm in doing it anyway.
             if event.target == "Up" and node.power_state == "Down":
                 # Only remember the first boot request.
                 if node.power_manage_boot is None:
@@ -352,29 +355,27 @@ def process_period(node, events, period):
                     node.power_state, event.state
                 ),
             )
-            # Add exception to allow node 1 uptime ping once it gets back
-            # on which indicates a reboot. Also, we only allow this if the
-            # target is down as well.
+            # Add exception to allow node 1 uptime ping once it gets back on
+            # which indicates a reboot. Also, we only allow this if the target
+            # is down as well.
             if node.power_target == "Down":
                 # Only on state transition
                 if node.power_state == "Up" and event.state == "Down":
                     # Keep track of this timestamp Either this is
-                    # Some(timestamp), indicating a previous state
-                    # transition which was not followed by an uptime ping
-                    # once the node came online. In this case, we ignore
-                    # that here. This would mean the node did not come up
-                    # again. Otherwise, if None, set the current timestamp
-                    # as time of going down.
+                    # Some(timestamp), indicating a previous state transition
+                    # which was not followed by an uptime ping once the node
+                    # came online. In this case, we ignore that here. This
+                    # would mean the node did not come up again. Otherwise, if
+                    # None, set the current timestamp as time of going down.
                     if node.power_managed is None:
                         # Also add an implicit uptime.
                         node.power_managed = event.timestamp
-                        # While we are at it, credit uptime since last
-                        # uptime event as well, as we will use this
-                        # timestamp as the base for future uptime
-                        # calculations. We don't have to overwrite this
-                        # since future calculations will first work on the
-                        # saved power_managed variable, and will have a
-                        # reboot either way.
+                        # While we are at it, credit uptime since last uptime
+                        # event as well, as we will use this timestamp as the
+                        # base for future uptime calculations. We don't have to
+                        # overwrite this since future calculations will first
+                        # work on the saved power_managed variable, and will
+                        # have a reboot either way.
                         if node.uptime_info is not None:
                             last_reported_at, last_reported_uptime, total_uptime = (
                                 node.uptime_info
@@ -401,8 +402,8 @@ def process_period(node, events, period):
 
 
 def process_post_period(node, events, period):
-    # Collect post-period uptime events. Violations don't matter here,
-    # those will be handled next period.
+    # Collect post-period uptime events. Violations don't matter here, those
+    # will be handled next period.
     for event in events:
         if isinstance(event, NodeUptimeReported):
             current_time = event.timestamp
@@ -417,9 +418,11 @@ def process_post_period(node, events, period):
                     last_reported_at, last_reported_uptime, total_uptime = (
                         node.uptime_info
                     )
-                    assert (
-                        last_reported_at < period.end
-                    ), "there can only be 1 uptime event post period for a power managed node"
+                    if last_reported_at > node.end_ts:
+                        log(
+                            f"Ignoring more than 1 farmer bot uptime event after period for node {node.id}\n"
+                        )
+                        continue
                 else:
                     total_uptime = 0
 
@@ -440,9 +443,10 @@ def process_post_period(node, events, period):
                 # Only add uptime if node came back online in time.
                 elif time_delta <= MAX_POWER_MANAGER_DOWNTIME:
                     uptime_diff = period.end - max(period.start, time_set_down)
-                    assert (
-                        uptime_diff >= 0
-                    ), "uptime event must be sent after node wen't down, chronology"
+                    if uptime_diff < 0:
+                        log(
+                            f"Ignoring farmer bot wakeup for node {node.id} which went down after the period ended"
+                        )
                     total_uptime += uptime_diff
                     log(
                         datetime.fromtimestamp(event.timestamp),
@@ -452,9 +456,8 @@ def process_post_period(node, events, period):
                         uptime_diff, event.timestamp, "Farmerbot post period", True
                     )
 
-                # Clear the fact that we got power managed, if it is still
-                # the case, it will be set again in the proper event
-                # handler.
+                # Clear the fact that we got power managed, if it is still the
+                # case, it will be set again in the proper event handler.
                 node.power_managed = None
                 node.power_manage_boot = None
                 node.uptime_info = (current_time, reported_uptime, total_uptime)
@@ -462,9 +465,9 @@ def process_post_period(node, events, period):
                 node.boot_time = (current_time - reported_uptime, current_time)
 
             # We are power managed but woke up without boot request. We
-            # explicitly ignore this: being put to sleep by the farmer
-            # bot requires a wakeup from the farmer bot. This case also
-            # means nodes just go to sleep anyhow.
+            # explicitly ignore this: being put to sleep by the farmer bot
+            # requires a wakeup from the farmer bot. This case also means
+            # nodes just go to sleep anyhow.
             elif node.power_managed is not None and node.power_manage_boot is None:
                 log(
                     datetime.fromtimestamp(event.timestamp),
@@ -473,8 +476,8 @@ def process_post_period(node, events, period):
                     ),
                 )
 
-            # We got a wakeup request from farmer bot but we are not
-            # sleeping due to the farmer bot. This should not happen.
+            # We got a wakeup request from farmer bot but we are not sleeping
+            # due to the farmer bot. This should not happen.
             elif node.power_managed is None and node.power_manage_boot is not None:
                 log(
                     datetime.fromtimestamp(event.timestamp),
@@ -495,18 +498,18 @@ def process_post_period(node, events, period):
                     report_delta = current_time - last_reported_at
                     uptime_delta = reported_uptime - last_reported_uptime
                     delta_in_period = period.end - last_reported_at
-                    # There are quite some situations here. Notice that due
-                    # to the blockchain only producing blocks every 6
-                    # seconds, and network delay + a host of other issues,
-                    # we will allow a node to report uptime with "grace
-                    # period" of a minute or so in either direction.
+                    # There are quite some situations here. Notice that due to
+                    # the blockchain only producing blocks every 6 seconds, and
+                    # network delay + a host of other issues, we will allow a
+                    # node to report uptime with "grace period" of a minute or
+                    # so in either direction.
                     #
-                    # 1. uptime_delta > report_delta + GRACE_PERIOD. Node
-                    # is talking rubish.
+                    # 1. uptime_delta > report_delta + GRACE_PERIOD. Node is
+                    # talking rubish.
                     if uptime_delta > report_delta + UPTIME_GRACE_PERIOD_SECONDS:
-                        # We need to register the violation here as we
-                        # won't be able to next period (since we don't
-                        # scrape points from before the period atm).
+                        # We need to register the violation here as we won't be
+                        # able to next period (since we don't scrape points
+                        # from before the period atm).
                         node.uptime_info = (current_time, reported_uptime, total_uptime)
                         log(
                             datetime.fromtimestamp(event.timestamp),
@@ -539,15 +542,15 @@ def process_post_period(node, events, period):
                                 "Panic! Node does not have boot time but does have uptime"
                             )
 
-                        # It is technically possible for the delta to be
-                        # less than 0 and within the expected time frame.
-                        # If nodes boot, send uptime, then immediately
-                        # reboot that is possible. In those cases, handle
-                        # that below, as that is the reboot detection.
+                        # It is technically possible for the delta to be less
+                        # than 0 and within the expected time frame. If nodes
+                        # boot, send uptime, then immediately reboot that is
+                        # possible. In those cases, handle that below, as that
+                        # is the reboot detection.
                         if uptime_delta > 0:
-                            # Simply add the uptime delta. If this is too
-                            # large or low by a couple of seconds it will
-                            # be corrected by the next pings anyhow.
+                            # Simply add the uptime delta. If this is too large
+                            # or low by a couple of seconds it will be
+                            # corrected by the next pings anyhow.
                             #
                             # Make sure we don't add too much based on the
                             # period.
@@ -589,11 +592,11 @@ def process_post_period(node, events, period):
                             )
                             continue
 
-                    # 3. The difference in uptime is too low. Again there
-                    # are multiple scenarios. Either way we consider the
-                    # node rebooted. Depending on the reported uptime, the
-                    # node reports legit uptime, or it reports an uptime
-                    # which is too high.
+                    # 3. The difference in uptime is too low. Again there are
+                    # multiple scenarios. Either way we consider the node
+                    # rebooted. Depending on the reported uptime, the node
+                    # reports legit uptime, or it reports an uptime which is
+                    # too high.
                     #
                     #    1. Uptime is within bounds.
                     if reported_uptime <= report_delta:
@@ -639,10 +642,10 @@ def process_post_period(node, events, period):
                         continue
 
                     #    2. Uptime is actually higher than difference in
-                    #    timestamp, but not high enough to be valid. This
-                    #    means the node was supposedly rebooted _before_
-                    #    the previous uptime report, meaning either that
-                    #    report is invalid or this report is invalid.
+                    #    timestamp, but not high enough to be valid. This means
+                    #    the node was supposedly rebooted _before_ the previous
+                    #    uptime report, meaning either that report is invalid
+                    #    or this report is invalid.
                     if reported_uptime > last_reported_uptime:
                         log(
                             datetime.fromtimestamp(event.timestamp),
@@ -655,27 +658,87 @@ def process_post_period(node, events, period):
                         datetime.fromtimestamp(event.timestamp),
                         f"Node {node.id} reported uptime of {reported_uptime} seconds, so time would have advanced faster on the node than in the universe\n",
                     )
+        elif isinstance(event, PowerTargetChanged):
+            log(
+                "Power target changed for from {} to {}\n".format(
+                    node.power_target, event.target
+                )
+            )
+            # Remember a rising edge here to validate node actually boots. This
+            # is cleared when a node sends an uptime report of a _reboot_. It
+            # is allowed for this to happen if a rising edge is not consumed
+            # yet, in which case the new event is ignored, as we want to
+            # measure time from the first event and it is actually a good idea
+            # to send multiple of these if the node does not react. Of course,
+            # we also only want to track this if the node is currently power
+            # managed. While we shouldn't try to boot an online node, there is
+            # no _real_ harm in doing it anyway.
+            if event.target == "Up" and node.power_state == "Down":
+                # Only remember the first boot request.
+                if not node.power_manage_boot:
+                    node.power_manage_boot = event.timestamp
+                    log("Remembered boot request time for node {}\n".format(node.id))
+            node.power_target = event.target
+
+            # Technically this is not needed since we don't care for actual
+            # state changes after the period. After all, we only use this to
+            # arm a trigger to catch farmerbot wakes up. This trigger is set
+            # when the node goes from up to down, and in doing so it also sends
+            # an uptime report to chain. Since we are post period now, if the
+            # node goes to sleep now its sleep time won't influence the current
+            # period. Regardless add this code here so we can keep track of
+            # state changes and rely on the fact that we only allow 1 uptime
+            # post period to do the proper thing.
+
+        elif isinstance(event, PowerStateChanged):
+            log(
+                "Power state changed from {} to {}\n".format(
+                    node.power_state, event.state
+                )
+            )
+            # Add exception to allow node 1 uptime ping once it gets back on
+            # which indicates a reboot. Also, we only allow this if the target
+            # is down as well. if node_power.target == Power::Down { Only on
+            # state transition
+            if node.power_state == "Up" and event.state == "Down":
+                # Either this is Some(timestamp), indicating a previous state
+                # transition which was not followed by an uptime ping once the
+                # node came online. In this case, we ignore that here. This
+                # would mean the node did not come up again. Otherwise, if
+                # None, set the current timestamp as time of going down.
+                if node.power_managed.is_none():
+                    # Also add an implicit uptime.
+                    node.power_managed = event.timestamp
+                    log("Remembered farmer bot shutdown\n")
+                    node.power_state = event.state
 
 
-# At this point we are done fetching events. Note that for the case of
-# power manager boot requests, we haven't checked the case where the node
-# does not respond at all. We already fetched a days worth of blocks after
-# the period ended, and don't keep track of power on requests there. So any
-# leftover requests here are already a day old, which is way too much. So
-# if any node has an outstanding power on request here, mark a boot
-# failure.
+# At this point we are done fetching events. Note that for the case of power
+# manager boot requests, we haven't checked the case where the node does not
+# respond at all. We already fetched a days worth of blocks after the period
+# ended, and don't keep track of power on requests there. So any leftover
+# requests here are already a day old, which is way too much. So if any node
+# has an outstanding power on request here, mark a boot failure.
 #
-# On top of this, if a node has more than the allowed amount of boot
-# failures, stick a violation on them if there isn't anohter one already.
+# On top of this, if a node has more than the allowed amount of boot failures,
+# stick a violation on them if there isn't anohter one already.
 def final_check(node, start_block_ts, end_block_ts):
     # First see if we need to mark another failure to boot in time.
     if node.power_manage_boot is not None:
         boot_request = node.power_manage_boot
-        # Ignore if this is the same as start, no need to slap a violation
-        # on what is likely a dead node.
+        # Ignore if this is the same as start, no need to slap a violation on
+        # what is likely a dead node.
         if boot_request == start_block_ts:
             log(
                 "Not giving node {} a slow boot violation since it never tried to boot in the first place\n".format(
+                    node.id
+                )
+            )
+        elif boot_request > end_block_ts:
+            # Boot request (and possible failure) is entirely past the current period so we
+            # reserve the violation for next minting.
+            log(
+                "Not giving node {} a slow boot violation since the wakup request happened post period\n".format(
                     node.id
                 )
             )
@@ -723,9 +786,9 @@ class MintingNode:
         self.boot_time = None
         self.boot_duration_violations = 0
 
-        # This is probably always the same as the "last_reported_at" value
-        # used in minting, but we track it separately here to avoid
-        # disturbing the code to make sure it's set before we need it
+        # This is probably always the same as the "last_reported_at" value used
+        # in minting, but we track it separately here to avoid disturbing the
+        # code to make sure it's set before we need it
         self.last_uptime_added_ts = period.start
         self.uptime = 0
         self.downtime = 0
@@ -733,14 +796,15 @@ class MintingNode:
 
     def credit_uptime(self, uptime, timestamp, note="", post_period=False):
         self.uptime += uptime
-        # We scale our elapsed time the same as how uptime is scaled after the period ends, so that we don't generate too much downtime
+        # We scale our elapsed time the same as how uptime is scaled after the
+        # period ends, so that we don't generate too much downtime
         if post_period:
             elapsed = self.end_ts - self.last_uptime_added_ts
         else:
             elapsed = timestamp - self.last_uptime_added_ts
-        # "Downtime" can be slightly negative sometimes and still be valid.
-        # We track this mostly as a sanity check, because it should always
-        # be equal to the period duration minus the uptime
+        # "Downtime" can be slightly negative sometimes and still be valid. We
+        # track this mostly as a sanity check, because it should always be
+        # equal to the period duration minus the uptime
         downtime = elapsed - uptime
         self.downtime += downtime
 
@@ -808,15 +872,20 @@ def get_events(con, node_id, start, end):
     return events
 
 
-def check_node(con, node_id, period):
-    # We assume this one is only run on finished minting periods
+def check_node(con, node_id, period, logging_mode=None, log_file=None):
+    # Just making the globals assignment explicit here This is a temporary
+    # solution, of course ;)
+    globals()["logging_mode"] = logging_mode
+    globals()["log_file"] = log_file
 
+    # We assume this one is only run on finished minting periods
+    #
     # Since we only fetch initial power configs for the beginning of each
-    # period, there's no risk of fetching the wrong one unless we're off by
-    # a month. On the other hand, getting the exact timestamp of the block
-    # or the block number is relatively expensive, so we use a bit of a
-    # hack here. Maybe a better approach is caching the period start/end
-    # info inside the db
+    # period, there's no risk of fetching the wrong one unless we're off by a
+    # month. On the other hand, getting the exact timestamp of the block or the
+    # block number is relatively expensive, so we use a bit of a hack here.
+    # Maybe a better approach is caching the period start/end info inside the
+    # db
     initial_power = con.execute(
         "SELECT state, down_time, target, timestamp FROM PowerState WHERE node_id=? AND timestamp>=?  AND timestamp<=?",
         [node_id, (period.start - PERIOD_CATCH), (period.start + PERIOD_CATCH)],
@@ -824,20 +893,19 @@ def check_node(con, node_id, period):
 
     # If there's no entry in the db, it would mean either the node was not
     # created yet at this point in time (thus the default value), or the
-    # fetching of this data is not completed. The latter case is
-    # potentially problematic, but as long as we get the data eventually,
-    # we will catch any associated violations eventually too
+    # fetching of this data is not completed. The latter case is potentially
+    # problematic, but as long as we get the data eventually, we will catch any
+    # associated violations eventually too
     if initial_power is None:
         initial_power = "Up", None, "Up", None
     state, down_time, target, timestamp = initial_power
 
     if state == "Down":
-        # This is now using the same approach as minting (that is, we only
-        # care about the actual time the node went to sleep, not when a
-        # boot was requested if it happened in the previous minting
-        # period). While maybe not immediately obvious, we need the time
-        # the node went to sleep here to correctly check if the boot time
-        # is greater below
+        # This is now using the same approach as minting (that is, we only care
+        # about the actual time the node went to sleep, not when a boot was
+        # requested if it happened in the previous minting period). While maybe
+        # not immediately obvious, we need the time the node went to sleep here
+        # to correctly check if the boot time is greater below
         power_managed = down_time
         if target == "Up":
             power_manage_boot = timestamp  # Block time of first block in period
