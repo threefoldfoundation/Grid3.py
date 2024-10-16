@@ -23,7 +23,7 @@ holds this data as a property and can export it as a CSV file too.
 import collections, csv
 from datetime import datetime
 
-from .period import Period
+# from .period import Period
 
 UPTIME_GRACE_PERIOD_SECONDS = 60  # 1 Minute
 CLOCK_SKEW_INTERVAL = 2 * UPTIME_GRACE_PERIOD_SECONDS
@@ -70,15 +70,17 @@ def process_period(node, events, period):
                     else:
                         total_uptime = node.uptime_info[2]
                     # Only add uptime if node boot did not violate any constraints.
+                    credit_uptime = True
                     if time_delta > MAX_POWER_MANAGER_DOWNTIME:
+                        credit_uptime = False
                         log(
                             datetime.fromtimestamp(event.timestamp),
                             f"Refusing to credit uptime for power managed node {node.id} as the last boot was {time_delta} seconds ago, more than the allowed 24 hours\n",
                         )
-                    elif (
+                    if (
                         current_time - reported_uptime
                     ) - boot_request > MAX_POWER_MANAGER_BOOT_TIME:
-
+                        credit_uptime = False
                         # Mark a violation on the node
                         node.boot_duration_violations += 1
                         log(
@@ -89,7 +91,7 @@ def process_period(node, events, period):
                                 datetime.fromtimestamp(current_time - reported_uptime),
                             ),
                         )
-                    else:
+                    if credit_uptime:
                         # Check and scale to match the actual period start if needed
                         if time_set_down < period.start:
                             total_uptime += current_time - period.start
@@ -706,7 +708,7 @@ def process_post_period(node, events, period):
                 # node came online. In this case, we ignore that here. This
                 # would mean the node did not come up again. Otherwise, if
                 # None, set the current timestamp as time of going down.
-                if node.power_managed.is_none():
+                if node.power_managed is None:
                     # Also add an implicit uptime.
                     node.power_managed = event.timestamp
                     log("Remembered farmer bot shutdown\n")
