@@ -6,19 +6,22 @@ from gql.transport.requests import RequestsHTTPTransport
 from gql.transport.exceptions import TransportServerError
 from gql.dsl import DSLSchema, DSLQuery, dsl_gql
 
-class GraphQL():
+
+class GraphQL:
     """
-    Abstraction of a Grid GraphQL endpoint at a given URL, corresponding to a given network. 
+    Abstraction of a Grid GraphQL endpoint at a given URL, corresponding to a given network.
     """
 
     def __init__(self, url=None, fetch_schema=True):
         self.transport = RequestsHTTPTransport(url=url, verify=True, retries=3)
-        self.client = Client(transport=self.transport,
-                             fetch_schema_from_transport=True)
+        # This won't fetch the schema until needed later
+        self.client = Client(transport=self.transport, fetch_schema_from_transport=True)
         self.fetching_schema = False
         # Really meant as a convenience for interactive use, probably not safe, or needed, for code that immediately runs queries. Actually, seems there's a lock on opening the transport, so it's not unsafe. We get some errors if we try to do stuff that requires the schema too soon, but do we really want a locking mechanism in here?
         # Now I'm getting a lot of errors like below that go away if I fetch_schema first
         # gql.transport.exceptions.TransportAlreadyConnected: Transport is already connected
+        # Seems the issue is that it's not safe to share clients among different threads: https://github.com/graphql-python/gql/issues/314
+        # The background fetching initiates a session, so this can be part of the issue, but I'm not sure why because we guard around trying to execute queries while the fetching is ongoing. Fetch session should be closed before the event is set due to client context manager
 
         if fetch_schema:
             self.fetching_schema = True
@@ -69,7 +72,7 @@ class GraphQL():
 
     def execute_dsl_query(self, query):
         return self.client.execute(dsl_gql(DSLQuery(query)))
-    
+
     def unwrap_type(self, gql_type):
         while 1:
             try:
@@ -95,19 +98,19 @@ class GraphQL():
             self.fetch_schema()
 
         query_field = self.client.schema.query_type.fields[query_field_name]
-        query_where_fields = query_field.args['where'].type.fields
+        query_where_fields = query_field.args["where"].type.fields
 
         arguments = {}
-        for arg in ('limit', 'offset', 'orderBy'):
+        for arg in ("limit", "offset", "orderBy"):
             if arg in kwds:
                 arguments[arg] = kwds.pop(arg)
-        
+
         # TODO: also validate that arguments to 'orderBy' are valid, and maybe provide some "autocorrection", such that nodeID=1 becomes nodeID_eq=1 and nodeID=[1,2,3,4] becomes nodeID_in=[1,2,3,4]
         # Also, validate that subfields and their inputs are valid, eg: power={'target': 'down', 'state': 'down'})
         for arg in kwds:
             if arg not in query_where_fields.keys():
                 raise graphql.error.GraphQLError('Not a valid "where" field: ' + arg)
-        arguments['where'] = kwds
+        arguments["where"] = kwds
         query = self.dsl_schema.Query.__getattr__(query_field_name)(**arguments)
 
         # Return types are composite of NonNull and List, we just want the root
@@ -123,25 +126,33 @@ class GraphQL():
                 name, subfields = output, None
 
             field_type = self.unwrap_type(return_type.fields[name].type)
-           
-           # Scalars and enums have no subfields. Are there others?
-           # Could also try field_type.fields and except AttributeError
+
+            # Scalars and enums have no subfields. Are there others?
+            # Could also try field_type.fields and except AttributeError
             if not graphql.type.is_composite_type(field_type):
                 query.select(return_type_dsl.__getattr__(name))
             elif subfields:
-                subfields = [self.dsl_schema.__getattr__(field_type.name).__getattr__(name) for name in subfields]
+                subfields = [
+                    self.dsl_schema.__getattr__(field_type.name).__getattr__(name)
+                    for name in subfields
+                ]
                 query.select(return_type_dsl.__getattr__(name).select(*subfields))
             else:
                 subfields = []
                 for subfield_name, subfield in field_type.fields.items():
                     subfield_type = self.unwrap_type(subfield.type)
-                    if (not graphql.type.is_composite_type(subfield_type) and 
-                    not subfield_name == 'id'):
-                        subfields.append(self.dsl_schema.__getattr__(field_type.name).__getattr__(subfield_name))
+                    if (
+                        not graphql.type.is_composite_type(subfield_type)
+                        and not subfield_name == "id"
+                    ):
+                        subfields.append(
+                            self.dsl_schema.__getattr__(field_type.name).__getattr__(
+                                subfield_name
+                            )
+                        )
                 query.select(return_type_dsl.__getattr__(name).select(*subfields))
 
         return self.execute_dsl_query(query)[query_field_name]
-
 
         # Belonged to the old "node" specific function. Some good stuff to save for docstring above or other docs
         """
