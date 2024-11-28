@@ -779,7 +779,7 @@ PowerStateChanged = collections.namedtuple(
 
 
 class MintingNode:
-    def __init__(self, node_id, period, verbose=False):
+    def __init__(self, node_id, period, verbose=False, grace_periods=[]):
         self.id = node_id
         self.period = period
         self.end_ts = period.end
@@ -788,6 +788,11 @@ class MintingNode:
         self.boot_time = None
         self.boot_duration_violations = 0
 
+        self.power_target = None
+        self.power_state = None
+        self.power_managed = None
+        self.power_manage_boot = None
+
         # This is probably always the same as the "last_reported_at" value used
         # in minting, but we track it separately here to avoid disturbing the
         # code to make sure it's set before we need it
@@ -795,6 +800,21 @@ class MintingNode:
         self.uptime = 0
         self.downtime = 0
         self.events = []
+
+        self.grace_periods = []
+        if grace_periods:
+            for grace_period in grace_periods:
+                # Each grace period is like a mini minting period
+                grace_period = {
+                    'start': grace_period[0],
+                    'end': grace_period[1],
+                    'seconds_set': grace_period[2],
+                    'name': grace_period[3],
+                    'uptime': 0,
+                    'boot_violations': 0,
+                    'events': []
+                }
+                self.grace_periods.append(grace_period)
 
     def credit_uptime(self, uptime, timestamp, note="", post_period=False):
         self.uptime += uptime
@@ -831,6 +851,26 @@ class MintingNode:
         self.events.append(event)
 
         self.last_uptime_added_ts = timestamp
+
+        # Grace period handling
+        # A grace period is range of time during which we want to give all nodes
+        # full uptime credit. These would be periods where some outage or
+        # problem affected the ability of some or all nodes to create uptime
+        # reports. We want to find the amount of time contained in this uptime
+        # credit which is also contained in the grace period. The idea is that
+        # once we know the total uptime that the node managed to accrue during
+        # the grace period, if any, then we can calculate the downtime over that
+        # period and apply an additional credit. We also make note of the events
+        # that generated this uptime, in case inspecting them later is of
+        # interest. Rather than dealing with the additional complication of
+        # calculating downtime here, we'll do it all at once at the end
+        if self.grace_periods:
+            credit_seconds_set = set(range(timestamp - uptime, timestamp))
+            for grace_period in self.grace_periods:
+                overlap = grace_period['seconds_set'] & credit_seconds_set
+                if overlap:
+                    grace_period['uptime'] += max(overlap) - min(overlap)
+                    grace_period['events'].append(event)
 
     def write_csv(self, path=None):
         if path is None:
@@ -874,7 +914,7 @@ def get_events(con, node_id, start, end):
     return events
 
 
-def check_node(con, node_id, period, logging_mode=None, log_file=None):
+def check_node(con, node_id, period, logging_mode=None, log_file=None, grace_periods=[]):
     # Just making the globals assignment explicit here This is a temporary
     # solution, of course ;)
     globals()["logging_mode"] = logging_mode
@@ -922,7 +962,7 @@ def check_node(con, node_id, period, logging_mode=None, log_file=None):
         con, node_id, period.end + 1, period.end + POST_PERIOD
     )
 
-    node = MintingNode(node_id, period)
+    node = MintingNode(node_id, period, grace_periods=grace_periods)
     node.power_target = target
     node.power_state = state
     node.power_managed = power_managed
