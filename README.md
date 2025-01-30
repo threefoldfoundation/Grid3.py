@@ -2,7 +2,15 @@
 
 This is a collection of Python modules for working with ThreeFold Grid v3. It's designed foremostly for interactive use on the REPL and joyful scripting. We value conciseness and trying to do what you *meant*, even at the expense of a few extra CPU cycles.
 
-If you're looking for a Grid v3 SDK for writing efficient and maintainable code bases, check out [Go](https://github.com/threefoldtech/tfgrid-sdk-go). For code that must execute in the user's browser, see [Typescript](https://github.com/threefoldtech/tfgrid-sdk-ts).
+The following are included:
+
+* Client for querying data from GraphQL and Grid Proxy
+* TFChain client mostly for queries but can also be used for submitting extrinsics
+* Some minting related code, including minting period calculations
+* RMB client based on RMB Peer (external processes required)
+* Basic wrapper around `tfcmd` for creating deployments
+
+If you're looking for a complete Grid v3 SDK, they are availalbe for [Go](https://github.com/threefoldtech/tfgrid-sdk-go) and [Typescript](https://github.com/threefoldtech/tfgrid-sdk-ts).
 
 ## Installation
 
@@ -29,7 +37,7 @@ pip install grid3
 
 ## Quick tour
 
-With the `graphql` module, you can easily answer questions like, how many nodes are currently in the standby state that were online in the last 36 hours?
+With the `graphql` module, you can easily answer questions like, how many nodes are currently in the standby state that were online in the last 24 hours?
 
 ```
 import time, grid3.network
