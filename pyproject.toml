@@ -10,9 +10,11 @@ packages = [{include = "grid3"}]
 [tool.poetry.dependencies]
 python = "^3.8"
 requests = "^2.31.0"
+websocket-client = "^1.8.0"
 gql = {extras = ["requests"], version = "^3.4.1"}
 redis = {version = "^5.0.0", optional = true}
 substrate-interface = {version = "^1.7.7", optional = true}
+prometheus-client = {version = "^0.22.0", optional = true}
 
 [build-system]
 requires = ["poetry-core"]
@@ -21,3 +23,4 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.extras]
 rmb = ["redis"]
 tfchain = ["substrate-interface"]
+indexer = ["prometheus-client"]
