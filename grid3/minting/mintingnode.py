@@ -20,7 +20,8 @@ a log of every uptime credit, along with any implied downtime. The node object
 holds this data as a property and can export it as a CSV file too.
 """
 
-import collections, csv
+import collections
+import csv
 from datetime import datetime
 
 # from .period import Period
@@ -383,9 +384,9 @@ def process_period(node, events, period):
                                 node.uptime_info
                             )
                             delta = event.timestamp - last_reported_at
-                            assert (
-                                delta >= 0
-                            ), "Power state changes can't travel back in time"
+                            assert delta >= 0, (
+                                "Power state changes can't travel back in time"
+                            )
                             total_uptime += delta
                             log(
                                 datetime.fromtimestamp(event.timestamp),
@@ -449,14 +450,15 @@ def process_post_period(node, events, period):
                         log(
                             f"Ignoring farmer bot wakeup for node {node.id} which went down after the period ended"
                         )
-                    total_uptime += uptime_diff
-                    log(
-                        datetime.fromtimestamp(event.timestamp),
-                        f"Added {uptime_diff} seconds of uptime for node {node.id}, for farmer bot boot post period\n",
-                    )
-                    node.credit_uptime(
-                        uptime_diff, event.timestamp, "Farmerbot post period", True
-                    )
+                    else:
+                        total_uptime += uptime_diff
+                        log(
+                            datetime.fromtimestamp(event.timestamp),
+                            f"Added {uptime_diff} seconds of uptime for node {node.id}, for farmer bot boot post period\n",
+                        )
+                        node.credit_uptime(
+                            uptime_diff, event.timestamp, "Farmerbot post period", True
+                        )
 
                 # Clear the fact that we got power managed, if it is still the
                 # case, it will be set again in the proper event handler.
@@ -806,13 +808,13 @@ class MintingNode:
             for grace_period in grace_periods:
                 # Each grace period is like a mini minting period
                 grace_period = {
-                    'start': grace_period[0],
-                    'end': grace_period[1],
-                    'seconds_set': grace_period[2],
-                    'name': grace_period[3],
-                    'uptime': 0,
-                    'boot_violations': 0,
-                    'events': []
+                    "start": grace_period[0],
+                    "end": grace_period[1],
+                    "seconds_set": grace_period[2],
+                    "name": grace_period[3],
+                    "uptime": 0,
+                    "boot_violations": 0,
+                    "events": [],
                 }
                 self.grace_periods.append(grace_period)
 
@@ -867,10 +869,10 @@ class MintingNode:
         if self.grace_periods:
             credit_seconds_set = set(range(timestamp - uptime, timestamp))
             for grace_period in self.grace_periods:
-                overlap = grace_period['seconds_set'] & credit_seconds_set
+                overlap = grace_period["seconds_set"] & credit_seconds_set
                 if overlap:
-                    grace_period['uptime'] += max(overlap) - min(overlap)
-                    grace_period['events'].append(event)
+                    grace_period["uptime"] += max(overlap) - min(overlap)
+                    grace_period["events"].append(event)
 
     def write_csv(self, path=None):
         if path is None:
@@ -914,7 +916,9 @@ def get_events(con, node_id, start, end):
     return events
 
 
-def check_node(con, node_id, period, logging_mode=None, log_file=None, grace_periods=[]):
+def check_node(
+    con, node_id, period, logging_mode=None, log_file=None, grace_periods=[]
+):
     # Just making the globals assignment explicit here This is a temporary
     # solution, of course ;)
     globals()["logging_mode"] = logging_mode
