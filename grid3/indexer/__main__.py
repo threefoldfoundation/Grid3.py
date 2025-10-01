@@ -206,6 +206,20 @@ def process_block(block, events):
                     ),
                 )
             )
+        elif event_id == "ContractBilled":
+            updates.append(
+                (
+                    "INSERT INTO ContractBilled VALUES(?, ?, ?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        attributes["timestamp"],
+                        attributes["discount_level"],
+                        attributes["amount_billed"],
+                        block_number,
+                        i,
+                    ),
+                )
+            )
 
     return updates
 
@@ -290,6 +304,10 @@ def prep_db(con):
 
     con.execute(
         "CREATE TABLE IF NOT EXISTS PowerState(node_id, state, down_block, down_time, target, block, timestamp, UNIQUE(node_id, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS ContractBilled(contract_id, timestamp, discount_level, amount_billed, block, event_index, UNIQUE(event_index, block))"
     )
 
     con.execute("CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY)")
