@@ -2,7 +2,7 @@ import argparse
 from grid3 import tfchain
 
 
-def inspect_events(start_block=None, end_block=None, network="main", count=100):
+def inspect_events(start_block=None, end_block=None, network="main", count=100, filters=None):
     """Inspect and print events from a range of blocks going backwards from the latest block"""
     client = tfchain.TFChain(network=network)
     
@@ -24,6 +24,8 @@ def inspect_events(start_block=None, end_block=None, network="main", count=100):
         start_block, end_block = end_block, start_block
 
     print(f"Inspecting events from blocks {start_block} down to {end_block} on {network} network...")
+    if filters:
+        print(f"Filters: {', '.join(filters)}")
     print("=" * 50)
 
     current_block_hash = latest_block["header"]["hash"]
@@ -48,17 +50,33 @@ def inspect_events(start_block=None, end_block=None, network="main", count=100):
             if not events:
                 print(f"Block {block_number}: No events")
             else:
-                print(f"Block {block_number}:")
-                for i, event in enumerate(events):
-                    event_data = event.value
-                    event_id = event_data.get("event_id", "Unknown")
-                    module_id = event_data.get("module_id", "Unknown")
-                    attributes = event_data.get("attributes", {})
+                # Filter events if filters are provided
+                if filters:
+                    filtered_events = []
+                    for event in events:
+                        event_data = event.value
+                        event_id = event_data.get("event_id", "Unknown")
+                        module_id = event_data.get("module_id", "Unknown")
+                        event_type = f"{module_id}::{event_id}"
+                        
+                        # Check if any filter string matches the event type
+                        if any(filter_str in event_type for filter_str in filters):
+                            filtered_events.append(event)
+                    events = filtered_events
 
-                    print(f"  Event {i}: {module_id}::{event_id}")
-                    print(f"    Attributes: {attributes}")
+                # Print events if we have any (either no filters or filters matched)
+                if events:
+                    print(f"Block {block_number}:")
+                    for i, event in enumerate(events):
+                        event_data = event.value
+                        event_id = event_data.get("event_id", "Unknown")
+                        module_id = event_data.get("module_id", "Unknown")
+                        attributes = event_data.get("attributes", {})
 
-                print("-" * 30)
+                        print(f"  Event {i}: {module_id}::{event_id}")
+                        print(f"    Attributes: {attributes}")
+
+                    print("-" * 30)
 
             # Move to parent block
             parent_hash = block["header"]["parentHash"]
@@ -74,7 +92,7 @@ def inspect_events(start_block=None, end_block=None, network="main", count=100):
             break
 
 
-def stream_events(network="main"):
+def stream_events(network="main", filters=None):
     """Stream and print events from incoming blocks"""
     client = tfchain.TFChain(network=network)
 
@@ -92,22 +110,40 @@ def stream_events(network="main"):
                 print(f"Block {block_number}: No events")
                 return
 
-            print(f"Block {block_number}:")
-            for i, event in enumerate(events):
-                event_data = event.value
-                event_id = event_data.get("event_id", "Unknown")
-                module_id = event_data.get("module_id", "Unknown")
-                attributes = event_data.get("attributes", {})
+            # Filter events if filters are provided
+            if filters:
+                filtered_events = []
+                for event in events:
+                    event_data = event.value
+                    event_id = event_data.get("event_id", "Unknown")
+                    module_id = event_data.get("module_id", "Unknown")
+                    event_type = f"{module_id}::{event_id}"
+                    
+                    # Check if any filter string matches the event type
+                    if any(filter_str in event_type for filter_str in filters):
+                        filtered_events.append(event)
+                events = filtered_events
 
-                print(f"  Event {i}: {module_id}::{event_id}")
-                print(f"    Attributes: {attributes}")
+            # Print events if we have any (either no filters or filters matched)
+            if events:
+                print(f"Block {block_number}:")
+                for i, event in enumerate(events):
+                    event_data = event.value
+                    event_id = event_data.get("event_id", "Unknown")
+                    module_id = event_data.get("module_id", "Unknown")
+                    attributes = event_data.get("attributes", {})
 
-            print("-" * 30)
+                    print(f"  Event {i}: {module_id}::{event_id}")
+                    print(f"    Attributes: {attributes}")
+
+                print("-" * 30)
 
         except Exception as e:
             print(f"Error processing block {block_number}: {e}")
 
     print(f"Streaming events from {network} network...")
+    if filters:
+        print(f"Filters: {', '.join(filters)}")
     print("=" * 50)
 
     client.sub.subscribe_block_headers(callback)
@@ -120,10 +156,11 @@ if __name__ == "__main__":
     parser.add_argument("--end-block", type=int, help="Ending block number to inspect")
     parser.add_argument("--count", type=int, default=100, help="Number of blocks to inspect (default: 100)")
     parser.add_argument("--stream", action="store_true", help="Stream live events instead of inspecting historical blocks")
+    parser.add_argument("--filter", nargs="+", help="Filter events by type (e.g., 'SmartContract::ContractCreated')")
     
     args = parser.parse_args()
     
     if args.stream:
-        stream_events(args.network)
+        stream_events(args.network, args.filter)
     else:
-        inspect_events(args.start_block, args.end_block, args.network, args.count)
+        inspect_events(args.start_block, args.end_block, args.network, args.count, args.filter)
