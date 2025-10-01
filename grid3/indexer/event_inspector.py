@@ -1,10 +1,10 @@
-import time
-from .. import tfchain
+from grid3 import tfchain
+
 
 def stream_events(network="main"):
     """Stream and print events from incoming blocks"""
     client = tfchain.TFChain(network=network)
-    
+
     def callback(head, update_nr, subscription_id):
         block_number = head["header"]["number"]
         try:
@@ -36,8 +36,9 @@ def stream_events(network="main"):
 
     print(f"Streaming events from {network} network...")
     print("=" * 50)
-    
+
     client.sub.subscribe_block_headers(callback)
+
 
 if __name__ == "__main__":
     stream_events()
