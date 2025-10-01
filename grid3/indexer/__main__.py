@@ -220,6 +220,36 @@ def process_block(block, events):
                     ),
                 )
             )
+        elif event_id == "UpdatedUsedResources":
+            used = attributes["used"]
+            updates.append(
+                (
+                    "INSERT INTO UpdatedUsedResources VALUES(?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        used["hru"],
+                        used["sru"],
+                        used["cru"],
+                        used["mru"],
+                        block_number,
+                        i,
+                    ),
+                )
+            )
+        elif event_id == "NruConsumptionReportReceived":
+            updates.append(
+                (
+                    "INSERT INTO NruConsumptionReportReceived VALUES(?, ?, ?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        attributes["timestamp"],
+                        attributes["window"],
+                        attributes["nru"],
+                        block_number,
+                        i,
+                    ),
+                )
+            )
 
     return updates
 
@@ -308,6 +338,14 @@ def prep_db(con):
 
     con.execute(
         "CREATE TABLE IF NOT EXISTS ContractBilled(contract_id, timestamp, discount_level, amount_billed, block, event_index, UNIQUE(event_index, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS UpdatedUsedResources(contract_id, hru, sru, cru, mru, block, event_index, UNIQUE(event_index, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS NruConsumptionReportReceived(contract_id, timestamp, window, nru, block, event_index, UNIQUE(event_index, block))"
     )
 
     con.execute("CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY)")
