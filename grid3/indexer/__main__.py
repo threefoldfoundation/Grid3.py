@@ -250,6 +250,36 @@ def process_block(block, events):
                     ),
                 )
             )
+        elif event_id == "ContractCreated" and event["module_id"] == "SmartContractModule":
+            contract_type = attributes["contract_type"]
+            node_id = None
+            if "NodeContract" in contract_type:
+                node_id = contract_type["NodeContract"]["node_id"]
+            updates.append(
+                (
+                    "INSERT INTO ContractCreated VALUES(?, ?, ?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        attributes["twin_id"],
+                        attributes["version"],
+                        attributes["state"],
+                        node_id,
+                        block_number,
+                    ),
+                )
+            )
+        elif event_id == "NodeContractCanceled" and event["module_id"] == "SmartContractModule":
+            updates.append(
+                (
+                    "INSERT INTO NodeContractCanceled VALUES(?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        attributes["node_id"],
+                        attributes["twin_id"],
+                        block_number,
+                    ),
+                )
+            )
 
     return updates
 
@@ -346,6 +376,14 @@ def prep_db(con):
 
     con.execute(
         "CREATE TABLE IF NOT EXISTS NruConsumptionReportReceived(contract_id, timestamp, window, nru, block, event_index, UNIQUE(event_index, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS ContractCreated(contract_id, twin_id, version, state, node_id, block, UNIQUE(contract_id, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS NodeContractCanceled(contract_id, node_id, twin_id, block, UNIQUE(contract_id, block))"
     )
 
     con.execute("CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY)")
