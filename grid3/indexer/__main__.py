@@ -280,6 +280,44 @@ def process_block(block, events):
                     ),
                 )
             )
+        elif event_id == "RentContractCanceled" and event["module_id"] == "SmartContractModule":
+            updates.append(
+                (
+                    "INSERT INTO RentContractCanceled VALUES(?, ?)",
+                    (
+                        attributes["contract_id"],
+                        block_number,
+                    ),
+                )
+            )
+        elif event_id == "NameContractCanceled" and event["module_id"] == "SmartContractModule":
+            updates.append(
+                (
+                    "INSERT INTO NameContractCanceled VALUES(?, ?)",
+                    (
+                        attributes["contract_id"],
+                        block_number,
+                    ),
+                )
+            )
+        elif event_id == "ContractUpdated" and event["module_id"] == "SmartContractModule":
+            contract_type = attributes["contract_type"]
+            node_id = None
+            if "NodeContract" in contract_type:
+                node_id = contract_type["NodeContract"]["node_id"]
+            updates.append(
+                (
+                    "INSERT INTO ContractUpdated VALUES(?, ?, ?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        attributes["twin_id"],
+                        attributes["version"],
+                        attributes["state"],
+                        node_id,
+                        block_number,
+                    ),
+                )
+            )
 
     return updates
 
@@ -384,6 +422,18 @@ def prep_db(con):
 
     con.execute(
         "CREATE TABLE IF NOT EXISTS NodeContractCanceled(contract_id, node_id, twin_id, block, UNIQUE(contract_id, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS RentContractCanceled(contract_id, block, UNIQUE(contract_id, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS NameContractCanceled(contract_id, block, UNIQUE(contract_id, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS ContractUpdated(contract_id, twin_id, version, state, node_id, block, UNIQUE(contract_id, block))"
     )
 
     con.execute("CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY)")
