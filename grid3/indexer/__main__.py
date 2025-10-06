@@ -209,7 +209,7 @@ def process_block(block, events):
         elif event_id == "ContractBilled":
             updates.append(
                 (
-                    "INSERT INTO ContractBilled VALUES(?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ContractBilled VALUES(?, ?, ?, ?, ?, ?, ?)",
                     (
                         attributes["contract_id"],
                         attributes["timestamp"],
@@ -217,6 +217,7 @@ def process_block(block, events):
                         attributes["amount_billed"],
                         block_number,
                         i,
+                        timestamp,
                     ),
                 )
             )
@@ -224,7 +225,7 @@ def process_block(block, events):
             used = attributes["used"]
             updates.append(
                 (
-                    "INSERT INTO UpdatedUsedResources VALUES(?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO UpdatedUsedResources VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         attributes["contract_id"],
                         used["hru"],
@@ -233,13 +234,14 @@ def process_block(block, events):
                         used["mru"],
                         block_number,
                         i,
+                        timestamp,
                     ),
                 )
             )
         elif event_id == "NruConsumptionReportReceived":
             updates.append(
                 (
-                    "INSERT INTO NruConsumptionReportReceived VALUES(?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO NruConsumptionReportReceived VALUES(?, ?, ?, ?, ?, ?, ?)",
                     (
                         attributes["contract_id"],
                         attributes["timestamp"],
@@ -247,17 +249,27 @@ def process_block(block, events):
                         attributes["nru"],
                         block_number,
                         i,
+                        timestamp,
                     ),
                 )
             )
         elif event_id == "ContractCreated" and event["module_id"] == "SmartContractModule":
             contract_type = attributes["contract_type"]
             node_id = None
+            deployment_hash = None
+            deployment_data = None
+            public_ips = None
+            public_ips_list = None
+            solution_provider_id = None
             if "NodeContract" in contract_type:
                 node_id = contract_type["NodeContract"]["node_id"]
+                deployment_hash = contract_type["NodeContract"]["deployment_hash"]
+                deployment_data = contract_type["NodeContract"]["deployment_data"]
+                public_ips = contract_type["NodeContract"]["public_ips"]
+                public_ips_list = str(contract_type["NodeContract"]["public_ips_list"])
             updates.append(
                 (
-                    "INSERT INTO ContractCreated VALUES(?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ContractCreated VALUES(?, ?, ?, ?, ?, ?, ?)",
                     (
                         attributes["contract_id"],
                         attributes["twin_id"],
@@ -265,49 +277,62 @@ def process_block(block, events):
                         attributes["state"],
                         node_id,
                         block_number,
+                        timestamp,
                     ),
                 )
             )
         elif event_id == "NodeContractCanceled" and event["module_id"] == "SmartContractModule":
             updates.append(
                 (
-                    "INSERT INTO NodeContractCanceled VALUES(?, ?, ?, ?)",
+                    "INSERT INTO NodeContractCanceled VALUES(?, ?, ?, ?, ?)",
                     (
                         attributes["contract_id"],
                         attributes["node_id"],
                         attributes["twin_id"],
                         block_number,
+                        timestamp,
                     ),
                 )
             )
         elif event_id == "RentContractCanceled" and event["module_id"] == "SmartContractModule":
             updates.append(
                 (
-                    "INSERT INTO RentContractCanceled VALUES(?, ?)",
+                    "INSERT INTO RentContractCanceled VALUES(?, ?, ?)",
                     (
                         attributes["contract_id"],
                         block_number,
+                        timestamp,
                     ),
                 )
             )
         elif event_id == "NameContractCanceled" and event["module_id"] == "SmartContractModule":
             updates.append(
                 (
-                    "INSERT INTO NameContractCanceled VALUES(?, ?)",
+                    "INSERT INTO NameContractCanceled VALUES(?, ?, ?)",
                     (
                         attributes["contract_id"],
                         block_number,
+                        timestamp,
                     ),
                 )
             )
         elif event_id == "ContractUpdated" and event["module_id"] == "SmartContractModule":
             contract_type = attributes["contract_type"]
             node_id = None
+            deployment_hash = None
+            deployment_data = None
+            public_ips = None
+            public_ips_list = None
+            solution_provider_id = None
             if "NodeContract" in contract_type:
                 node_id = contract_type["NodeContract"]["node_id"]
+                deployment_hash = contract_type["NodeContract"]["deployment_hash"]
+                deployment_data = contract_type["NodeContract"]["deployment_data"]
+                public_ips = contract_type["NodeContract"]["public_ips"]
+                public_ips_list = str(contract_type["NodeContract"]["public_ips_list"])
             updates.append(
                 (
-                    "INSERT INTO ContractUpdated VALUES(?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?)",
                     (
                         attributes["contract_id"],
                         attributes["twin_id"],
@@ -315,6 +340,7 @@ def process_block(block, events):
                         attributes["state"],
                         node_id,
                         block_number,
+                        timestamp,
                     ),
                 )
             )
@@ -405,35 +431,35 @@ def prep_db(con):
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS ContractBilled(contract_id, timestamp, discount_level, amount_billed, block, event_index, UNIQUE(event_index, block))"
+        "CREATE TABLE IF NOT EXISTS ContractBilled(contract_id, billing_timestamp, discount_level, amount_billed, block, event_index, timestamp, UNIQUE(event_index, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS UpdatedUsedResources(contract_id, hru, sru, cru, mru, block, event_index, UNIQUE(event_index, block))"
+        "CREATE TABLE IF NOT EXISTS UpdatedUsedResources(contract_id, hru, sru, cru, mru, block, event_index, timestamp, UNIQUE(event_index, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NruConsumptionReportReceived(contract_id, timestamp, window, nru, block, event_index, UNIQUE(event_index, block))"
+        "CREATE TABLE IF NOT EXISTS NruConsumptionReportReceived(contract_id, report_timestamp, window, nru, block, event_index, timestamp, UNIQUE(event_index, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS ContractCreated(contract_id, twin_id, version, state, node_id, block, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS ContractCreated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NodeContractCanceled(contract_id, node_id, twin_id, block, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS NodeContractCanceled(contract_id, node_id, twin_id, block, timestamp, UNIQUE(contract_id, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS RentContractCanceled(contract_id, block, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS RentContractCanceled(contract_id, block, timestamp, UNIQUE(contract_id, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NameContractCanceled(contract_id, block, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS NameContractCanceled(contract_id, block, timestamp, UNIQUE(contract_id, block))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS ContractUpdated(contract_id, twin_id, version, state, node_id, block, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS ContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id, block))"
     )
 
     con.execute("CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY)")
