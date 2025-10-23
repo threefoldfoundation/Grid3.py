@@ -379,8 +379,7 @@ class TFCmd:
             != "https://hub.grid.tf/tf-official-apps/threefoldtech-ubuntu-22.04.flist"
         ):
             args.extend(["--flist", flist])
-        if entrypoint != "/sbin/zinit init":
-            args.extend(["--entrypoint", entrypoint])
+        args.extend(["--entrypoint", entrypoint])
 
         if gpus:
             args.extend(["--gpus"] + gpus)
