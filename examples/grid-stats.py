@@ -22,14 +22,46 @@ GB 1000 bytes for the same reason that disk manufacturers do :)
 """
 
 import time
+
 import grid3.network
 from grid3.types import Node
 
 resource_types = ["cru", "mru", "sru", "hru"]
 
+solution_types = {
+    "jenkins": "Jenkins",
+    "algorand": "Algorand",
+    "caprover": "CapRover",
+    "casperlabs": "Casperlabs",
+    "discourse": "Discourse",
+    "fullvm": "Full Virtual Machine",
+    "funkwhale": "Funkwhale",
+    "gatewayname": "Gateway Name",
+    "kubernetes": "Kubernetes",
+    "mattermost": "Mattermost",
+    "nodepilot": "Node Pilot",
+    "openwebui": "Open WebUI",
+    "owncloud": "Owncloud",
+    "nextcloud": "Nextcloud",
+    "peertube": "Peertube",
+    "presearch": "Presearch",
+    "subsquid": "Subsquid",
+    "taiga": "Taiga",
+    "umbrel": "Umbrel",
+    "vm": "Micro Virtual Machine",
+    "wordpress": "Wordpress",
+    "staticwebsite": "Static Website",
+    "tfrobot": "TFRobot",
+    "gitea": "Gitea",
+    "nostr": "Nostr",
+    "domains": "Domains",
+    "jitsi": "Jitsi",
+}
+
+
 def get_nodes(graphql):
     """
-    We fetch all nodes with signs of life in the last 36 hours. 
+    We fetch all nodes with signs of life in the last 36 hours.
     Standby nodes only come online every 24 hours, and we add some wiggle room
     """
     active = int(time.time()) - 60 * 60 * 36
@@ -39,7 +71,9 @@ def get_nodes(graphql):
 
 
 def get_contracts(graphql):
-    return graphql.nodeContracts(["resourcesUsed"], state_eq="Created")
+    return graphql.nodeContracts(
+        ["resourcesUsed", "deploymentData"], state_eq="Created"
+    )
 
 
 def capacity_total(nodes):
@@ -84,6 +118,21 @@ def zos_resources(nodes):
     return resources
 
 
+def tally_solutions(contracts):
+    tallies = {v: 0 for v in solution_types.values()}
+
+    for contract in contracts:
+        for key in solution_types.keys():
+            if (
+                key in contract["deploymentData"]
+                and contract["resourcesUsed"] is not None
+                and int(contract["resourcesUsed"]["cru"]) > 0
+            ):
+                tallies[solution_types[key]] += 1
+
+    return tallies
+
+
 def new_nodes(nodes):
     """
     Find nodes that were created within the last week
@@ -114,7 +163,7 @@ def print_new_nodes(nodes):
     for node in nodes:
         countries[node.country] += 1
 
-    print("Total new: " + str(len(nodes)))
+    print("Total new nodes: " + str(len(nodes)))
 
     for country, count in countries.items():
         print("* " + country + ": " + str(count))
@@ -223,6 +272,7 @@ for net in nets:
     nets[net]["zos_resources"] = zos_resources(nodes)
     nets[net]["capacity_total"] = capacity_total(nodes)
     nets[net]["utilization_total"] = utilization_total(contracts)
+    nets[net]["solutions_tally"] = tally_solutions(contracts)
 
     sleepers = [node for node in nodes if node.power and node.power["state"] == "Down"]
     nets[net]["sleepers"] = len(sleepers)
@@ -268,3 +318,7 @@ print_utilization(
     nets["test"]["zos_resources"],
 )
 print_utilization("Total", utilization_totals, new_capacity_totals, zos_totals)
+
+# print("# Solution Deployment Counts")
+# for net in nets.values():
+#     print(net["solutions_tally"])
