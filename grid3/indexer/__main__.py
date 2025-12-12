@@ -1,13 +1,19 @@
-import sqlite3, datetime, time, logging, functools, argparse
+import argparse
+import datetime
+import functools
+import sqlite3
+import time
+from multiprocessing import JoinableQueue, Process
 from threading import Thread
-from multiprocessing import Process, JoinableQueue
-from websocket._exceptions import (
-    WebSocketConnectionClosedException,
-    WebSocketAddressException,
-)
+
 import prometheus_client
+from websocket._exceptions import (
+    WebSocketAddressException,
+    WebSocketConnectionClosedException,
+)
+
 from .. import tfchain
-from .. minting.period import Period
+from ..minting.period import Period
 
 MIN_WORKERS = 2
 SLEEP_TIME = 30
@@ -56,11 +62,12 @@ def db_writer(write_queue):
 
         try:
             with con:
-                block_number, updates = job
+                block_number, updates, spec_version = job
                 for update in updates:
                     con.execute(*update)
                 con.execute(
-                    "INSERT OR IGNORE INTO processed_blocks VALUES(?)", (block_number,)
+                    "INSERT OR IGNORE INTO processed_blocks VALUES(?, ?)",
+                    (block_number, spec_version),
                 )
         except Exception as e:
             print("Got an exception in write loop:", e)
@@ -126,12 +133,14 @@ def fetch_powers(block_number, db_file=None):
             print("Got exception while fetching powers:", e)
 
 
-def get_block(client, block_number):
+def get_block_data(client, block_number):
     # Sometimes we get None here (but only on remote VM?)
     # Maybe better to handle gracefully rather than let proc die
     block = client.sub.get_block(block_number=block_number)
-    events = client.sub.get_events(block["header"]["hash"])
-    return block, events
+    block_hash = block["header"]["hash"]
+    events = client.sub.get_events(block_hash)
+    spec_version = client.sub.get_block_runtime_version(block_hash)["specVersion"]
+    return block, events, spec_version
 
 
 def get_processed_blocks(con):
@@ -147,7 +156,7 @@ def new_connection(db_file=None):
     return con
 
 
-def process_block(block, events):
+def process_block(block, events, spec_version):
     block_number = block["header"]["number"]
     timestamp = block["extrinsics"][0].value["call"]["call_args"][0]["value"] // 1000
 
@@ -253,7 +262,10 @@ def process_block(block, events):
                     ),
                 )
             )
-        elif event_id == "ContractCreated" and event["module_id"] == "SmartContractModule":
+        elif (
+            event_id == "ContractCreated"
+            and event["module_id"] == "SmartContractModule"
+        ):
             contract_type = attributes["contract_type"]
             node_id = None
             deployment_hash = None
@@ -281,7 +293,10 @@ def process_block(block, events):
                     ),
                 )
             )
-        elif event_id == "NodeContractCanceled" and event["module_id"] == "SmartContractModule":
+        elif (
+            event_id == "NodeContractCanceled"
+            and event["module_id"] == "SmartContractModule"
+        ):
             updates.append(
                 (
                     "INSERT INTO NodeContractCanceled VALUES(?, ?, ?, ?, ?)",
@@ -294,7 +309,10 @@ def process_block(block, events):
                     ),
                 )
             )
-        elif event_id == "RentContractCanceled" and event["module_id"] == "SmartContractModule":
+        elif (
+            event_id == "RentContractCanceled"
+            and event["module_id"] == "SmartContractModule"
+        ):
             updates.append(
                 (
                     "INSERT INTO RentContractCanceled VALUES(?, ?, ?)",
@@ -305,7 +323,10 @@ def process_block(block, events):
                     ),
                 )
             )
-        elif event_id == "NameContractCanceled" and event["module_id"] == "SmartContractModule":
+        elif (
+            event_id == "NameContractCanceled"
+            and event["module_id"] == "SmartContractModule"
+        ):
             updates.append(
                 (
                     "INSERT INTO NameContractCanceled VALUES(?, ?, ?)",
@@ -316,7 +337,10 @@ def process_block(block, events):
                     ),
                 )
             )
-        elif event_id == "ContractUpdated" and event["module_id"] == "SmartContractModule":
+        elif (
+            event_id == "ContractUpdated"
+            and event["module_id"] == "SmartContractModule"
+        ):
             contract_type = attributes["contract_type"]
             node_id = None
             deployment_hash = None
@@ -344,6 +368,23 @@ def process_block(block, events):
                     ),
                 )
             )
+        elif (
+            event_id == "RewardDistributed"
+            and event["module_id"] == "SmartContractModule"
+        ):
+            updates.append(
+                (
+                    "INSERT INTO RewardDistributed VALUES(?, ?, ?, ?, ?, ?)",
+                    (
+                        attributes["contract_id"],
+                        attributes["standard_rewards"],
+                        attributes["additional_rewards"],
+                        block_number,
+                        i,
+                        timestamp,
+                    ),
+                )
+            )
 
     return updates
 
@@ -364,9 +405,9 @@ def processor(block_queue, write_queue):
 
         try:
             if exists is None:
-                block, events = get_block(client, block_number)
-                updates = process_block(block, events)
-                write_queue.put((block_number, updates))
+                block, events, spec_version = get_block_data(client, block_number)
+                updates = process_block(block, events, spec_version)
+                write_queue.put((block_number, updates, spec_version))
 
         finally:
             # This allows us to join() the queue later to determine when all queued blocks have been attempted, even if processing failed
@@ -462,7 +503,17 @@ def prep_db(con):
         "CREATE TABLE IF NOT EXISTS ContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id, block))"
     )
 
-    con.execute("CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY)")
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS RewardDistributed(contract_id, standard_rewards, additional_rewards, block, event_index, timestamp, UNIQUE(event_index, block))"
+    )
+
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS RewardDistributed_contract_id_ts ON RewardDistributed(contract_id, timestamp)"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS processed_blocks(block_number PRIMARY KEY, spec_version)"
+    )
 
     con.execute("CREATE TABLE IF NOT EXISTS kv(key UNIQUE, value)")
     con.execute("INSERT OR IGNORE INTO kv VALUES('checkpoint_block', 0)")
