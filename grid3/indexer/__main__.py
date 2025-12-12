@@ -43,7 +43,7 @@ def find_missing(con, start_block, end_block):
 
         SELECT value FROM range
         EXCEPT
-        SELECT * FROM processed_blocks
+        SELECT block_number FROM processed_blocks
         ORDER BY value
         """,
         (start_block, end_block),
@@ -144,7 +144,7 @@ def get_block_data(client, block_number):
 
 
 def get_processed_blocks(con):
-    result = con.execute("SELECT * FROM processed_blocks").fetchall()
+    result = con.execute("SELECT block_number FROM processed_blocks").fetchall()
     return [x[0] for x in result]
 
 
