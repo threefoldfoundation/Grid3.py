@@ -173,8 +173,8 @@ def process_block(block, events, spec_version):
         extrinsic = extrinsics[i]
         extrinsic_events = events_by_extrinsic[i]
 
-        call_module = extrinsic.value["call"].call_module.name
-        call_function = extrinsic.value["call"].call_function.name
+        call_module = extrinsic.value["call"]["call_module"]
+        call_function = extrinsic.value["call"]["call_function"]
 
         # We do some special handling here because ReserveRepatriated events can
         # be also emitted in other cases, namely twin transfers at the moment
@@ -195,8 +195,8 @@ def process_block(block, events, spec_version):
             # to just create the update inside this loop. But I'm not 100% sure
             # and it could change later, so we collect first then process below
             for event_index, event in extrinsic_events:
-                event_id = event["event_id"]
-                attributes = event["attributes"]
+                event_id = event.value["event_id"]
+                attributes = event.value["attributes"]
 
                 if event_id == "ContractBilled":
                     contract_billed = event
@@ -256,8 +256,8 @@ def process_block(block, events, spec_version):
                 )
         else:
             for event_index, event in extrinsic_events:
-                event_id = event["event_id"]
-                attributes = event["attributes"]
+                event_id = event.value["event_id"]
+                attributes = event.value["attributes"]
 
                 if event_id == "NodeUptimeReported":
                     updates.append(
@@ -268,7 +268,7 @@ def process_block(block, events, spec_version):
                                 attributes[2],
                                 attributes[1],
                                 block_number,
-                                i,
+                                event_index,
                                 timestamp,
                             ),
                         )
@@ -282,7 +282,7 @@ def process_block(block, events, spec_version):
                                 attributes["node_id"],
                                 attributes["power_target"],
                                 block_number,
-                                i,
+                                event_index,
                                 timestamp,
                             ),
                         )
@@ -303,7 +303,7 @@ def process_block(block, events, spec_version):
                                 state,
                                 down_block,
                                 block_number,
-                                i,
+                                event_index,
                                 timestamp,
                             ),
                         )
@@ -321,7 +321,7 @@ def process_block(block, events, spec_version):
                                 used["cru"],
                                 used["mru"],
                                 block_number,
-                                i,
+                                event_index,
                                 timestamp,
                             ),
                         )
@@ -336,14 +336,14 @@ def process_block(block, events, spec_version):
                                 attributes["window"],
                                 attributes["nru"],
                                 block_number,
-                                i,
+                                event_index,
                                 timestamp,
                             ),
                         )
                     )
                 elif (
                     event_id == "ContractCreated"
-                    and event["module_id"] == "SmartContractModule"
+                    and event.value["module_id"] == "SmartContractModule"
                 ):
                     contract_type = attributes["contract_type"]
                     if "NodeContract" in contract_type:
@@ -400,7 +400,7 @@ def process_block(block, events, spec_version):
                         )
                 elif (
                     event_id == "NodeContractCanceled"
-                    and event["module_id"] == "SmartContractModule"
+                    and event.value["module_id"] == "SmartContractModule"
                 ):
                     updates.append(
                         (
@@ -416,7 +416,7 @@ def process_block(block, events, spec_version):
                     )
                 elif (
                     event_id == "RentContractCanceled"
-                    and event["module_id"] == "SmartContractModule"
+                    and event.value["module_id"] == "SmartContractModule"
                 ):
                     updates.append(
                         (
@@ -430,7 +430,7 @@ def process_block(block, events, spec_version):
                     )
                 elif (
                     event_id == "NameContractCanceled"
-                    and event["module_id"] == "SmartContractModule"
+                    and event.value["module_id"] == "SmartContractModule"
                 ):
                     updates.append(
                         (
@@ -444,7 +444,7 @@ def process_block(block, events, spec_version):
                     )
                 elif (
                     event_id == "ContractUpdated"
-                    and event["module_id"] == "SmartContractModule"
+                    and event.value["module_id"] == "SmartContractModule"
                 ):
                     contract_type = attributes["contract_type"]
                     if "NodeContract" in contract_type:
