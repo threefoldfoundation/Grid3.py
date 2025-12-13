@@ -158,233 +158,307 @@ def new_connection(db_file=None):
 
 def process_block(block, events, spec_version):
     block_number = block["header"]["number"]
-    timestamp = block["extrinsics"][0].value["call"]["call_args"][0]["value"] // 1000
+    extrinsics = block["extrinsics"]
+    timestamp = extrinsics[0].value["call"]["call_args"][0]["value"] // 1000
+
+    events_by_extrinsic = [[] for _ in extrinsics]
+
+    for i, event in enumerate(events):
+        if event.value["phase"] == "ApplyExtrinsic":
+            events_by_extrinsic[event.extrinsic_idx].append((i, event))
 
     updates = []
-    for i, event in enumerate(events):
-        event = event.value
-        event_id = event["event_id"]
-        attributes = event["attributes"]
-        # TODO: pass these more efficiently than writing the INSERT string for each one
-        if event_id == "NodeUptimeReported":
-            updates.append(
-                (
-                    "INSERT INTO NodeUptimeReported VALUES(?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes[0],
-                        attributes[2],
-                        attributes[1],
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
-        elif event_id == "PowerTargetChanged":
-            updates.append(
-                (
-                    "INSERT INTO PowerTargetChanged VALUES(?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["farm_id"],
-                        attributes["node_id"],
-                        attributes["power_target"],
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
-        elif event_id == "PowerStateChanged":
-            if attributes["power_state"] == "Up":
-                state = "Up"
-                down_block = None
-            else:
-                state = "Down"
-                down_block = attributes["power_state"]["Down"]
-            updates.append(
-                (
-                    "INSERT INTO PowerStateChanged VALUES(?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["farm_id"],
-                        attributes["node_id"],
-                        state,
-                        down_block,
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
-        elif event_id == "ContractBilled":
-            updates.append(
-                (
-                    "INSERT INTO ContractBilled VALUES(?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["contract_id"],
-                        attributes["timestamp"],
-                        attributes["discount_level"],
-                        attributes["amount_billed"],
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
-        elif event_id == "UpdatedUsedResources":
-            used = attributes["used"]
-            updates.append(
-                (
-                    "INSERT INTO UpdatedUsedResources VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["contract_id"],
-                        used["hru"],
-                        used["sru"],
-                        used["cru"],
-                        used["mru"],
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
-        elif event_id == "NruConsumptionReportReceived":
-            updates.append(
-                (
-                    "INSERT INTO NruConsumptionReportReceived VALUES(?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["contract_id"],
-                        attributes["timestamp"],
-                        attributes["window"],
-                        attributes["nru"],
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
-        elif (
-            event_id == "ContractCreated"
-            and event["module_id"] == "SmartContractModule"
+
+    for i in range(1, len(extrinsics)):
+        extrinsic = extrinsics[i]
+        extrinsic_events = events_by_extrinsic[i]
+
+        call_module = extrinsic.value["call"].call_module.name
+        call_function = extrinsic.value["call"].call_function.name
+
+        # We do some special handling here because ReserveRepatriated events can
+        # be also emitted in other cases, namely twin transfers at the moment
+        # but possibly others in the future since this is a generic event. So we
+        # need to know when ReserveRepatriated is linked to billing, by checking
+        # what kind of extrinsic it's a part of
+        if (
+            call_module == "smartContractModule"
+            and call_function == "billContractForBlock"
         ):
-            contract_type = attributes["contract_type"]
-            node_id = None
-            deployment_hash = None
-            deployment_data = None
-            public_ips = None
-            public_ips_list = None
-            solution_provider_id = None
-            if "NodeContract" in contract_type:
-                node_id = contract_type["NodeContract"]["node_id"]
-                deployment_hash = contract_type["NodeContract"]["deployment_hash"]
-                deployment_data = contract_type["NodeContract"]["deployment_data"]
-                public_ips = contract_type["NodeContract"]["public_ips"]
-                public_ips_list = str(contract_type["NodeContract"]["public_ips_list"])
+            contract_billed = None
+            contract_billed_index = None
+            rewards_distributed = []
+            reserves_repatriated = []
+
+            # Probably the events are always in the same order, with
+            # ContractBille coming ahead of the other, and it thus it would work
+            # to just create the update inside this loop. But I'm not 100% sure
+            # and it could change later, so we collect first then process below
+            for event_index, event in extrinsic_events:
+                event_id = event["event_id"]
+                attributes = event["attributes"]
+
+                if event_id == "ContractBilled":
+                    contract_billed = event
+                    contract_billed_index = event_index
+                elif event_id == "RewardDistributed":
+                    rewards_distributed.append((event_index, event))
+                elif event_id == "ReserveRepatriated":
+                    reserves_repatriated.append((event_index, event))
+
             updates.append(
                 (
-                    "INSERT INTO ContractCreated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ContractBilled(contract_id, billing_timestamp, discount_level, amount_billed, standard_rewards, additional_rewards, block, event_index, timestamp) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        attributes["contract_id"],
-                        attributes["twin_id"],
-                        attributes["version"],
-                        attributes["state"],
-                        node_id,
+                        contract_billed["attributes"]["contract_id"],
+                        contract_billed["attributes"]["billing_timestamp"],
+                        contract_billed["attributes"]["discount_level"],
+                        contract_billed["attributes"]["amount_billed"],
+                        contract_billed["attributes"]["standard_rewards"],
+                        contract_billed["attributes"]["additional_rewards"],
                         block_number,
+                        event_index,
                         timestamp,
                     ),
                 )
             )
-        elif (
-            event_id == "NodeContractCanceled"
-            and event["module_id"] == "SmartContractModule"
-        ):
-            updates.append(
-                (
-                    "INSERT INTO NodeContractCanceled VALUES(?, ?, ?, ?, ?)",
+
+            for event_index, repatriation in reserves_repatriated:
+                updates.append(
                     (
-                        attributes["contract_id"],
-                        attributes["node_id"],
-                        attributes["twin_id"],
-                        block_number,
-                        timestamp,
-                    ),
+                        "INSERT INTO BillingRepatriationEvents(from_account, to_account, amount, block, event_index, billing_event_index, timestamp) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            repatriation["attributes"]["from_account"],
+                            repatriation["attributes"]["to_account"],
+                            repatriation["attributes"]["amount"],
+                            block_number,
+                            event_index,
+                            contract_billed_index,
+                            timestamp,
+                        ),
+                    )
                 )
-            )
-        elif (
-            event_id == "RentContractCanceled"
-            and event["module_id"] == "SmartContractModule"
-        ):
-            updates.append(
-                (
-                    "INSERT INTO RentContractCanceled VALUES(?, ?, ?)",
+
+            for event_index, reward in rewards_distributed:
+                updates.append(
                     (
-                        attributes["contract_id"],
-                        block_number,
-                        timestamp,
-                    ),
+                        "INSERT INTO RewardDistributed(contract_id, standard_rewards, additional_rewards, block, event_index, billing_event_index, timestamp) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            reward["attributes"]["contract_id"],
+                            reward["attributes"]["standard_rewards"],
+                            reward["attributes"]["additional_rewards"],
+                            block_number,
+                            event_index,
+                            contract_billed_index,
+                            timestamp,
+                        ),
+                    )
                 )
-            )
-        elif (
-            event_id == "NameContractCanceled"
-            and event["module_id"] == "SmartContractModule"
-        ):
-            updates.append(
-                (
-                    "INSERT INTO NameContractCanceled VALUES(?, ?, ?)",
-                    (
-                        attributes["contract_id"],
-                        block_number,
-                        timestamp,
-                    ),
-                )
-            )
-        elif (
-            event_id == "ContractUpdated"
-            and event["module_id"] == "SmartContractModule"
-        ):
-            contract_type = attributes["contract_type"]
-            node_id = None
-            deployment_hash = None
-            deployment_data = None
-            public_ips = None
-            public_ips_list = None
-            solution_provider_id = None
-            if "NodeContract" in contract_type:
-                node_id = contract_type["NodeContract"]["node_id"]
-                deployment_hash = contract_type["NodeContract"]["deployment_hash"]
-                deployment_data = contract_type["NodeContract"]["deployment_data"]
-                public_ips = contract_type["NodeContract"]["public_ips"]
-                public_ips_list = str(contract_type["NodeContract"]["public_ips_list"])
-            updates.append(
-                (
-                    "INSERT INTO ContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["contract_id"],
-                        attributes["twin_id"],
-                        attributes["version"],
-                        attributes["state"],
-                        node_id,
-                        block_number,
-                        timestamp,
-                    ),
-                )
-            )
-        elif (
-            event_id == "RewardDistributed"
-            and event["module_id"] == "SmartContractModule"
-        ):
-            updates.append(
-                (
-                    "INSERT INTO RewardDistributed VALUES(?, ?, ?, ?, ?, ?)",
-                    (
-                        attributes["contract_id"],
-                        attributes["standard_rewards"],
-                        attributes["additional_rewards"],
-                        block_number,
-                        i,
-                        timestamp,
-                    ),
-                )
-            )
+        else:
+            for event_index, event in extrinsic_events:
+                event_id = event["event_id"]
+                attributes = event["attributes"]
+
+                if event_id == "NodeUptimeReported":
+                    updates.append(
+                        (
+                            "INSERT INTO NodeUptimeReported VALUES(?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes[0],
+                                attributes[2],
+                                attributes[1],
+                                block_number,
+                                i,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif event_id == "PowerTargetChanged":
+                    updates.append(
+                        (
+                            "INSERT INTO PowerTargetChanged VALUES(?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes["farm_id"],
+                                attributes["node_id"],
+                                attributes["power_target"],
+                                block_number,
+                                i,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif event_id == "PowerStateChanged":
+                    if attributes["power_state"] == "Up":
+                        state = "Up"
+                        down_block = None
+                    else:
+                        state = "Down"
+                        down_block = attributes["power_state"]["Down"]
+                    updates.append(
+                        (
+                            "INSERT INTO PowerStateChanged VALUES(?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes["farm_id"],
+                                attributes["node_id"],
+                                state,
+                                down_block,
+                                block_number,
+                                i,
+                                timestamp,
+                            ),
+                        )
+                    )
+
+                elif event_id == "UpdatedUsedResources":
+                    used = attributes["used"]
+                    updates.append(
+                        (
+                            "INSERT INTO UpdatedUsedResources VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                used["hru"],
+                                used["sru"],
+                                used["cru"],
+                                used["mru"],
+                                block_number,
+                                i,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif event_id == "NruConsumptionReportReceived":
+                    updates.append(
+                        (
+                            "INSERT INTO NruConsumptionReportReceived VALUES(?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                attributes["timestamp"],
+                                attributes["window"],
+                                attributes["nru"],
+                                block_number,
+                                i,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif (
+                    event_id == "ContractCreated"
+                    and event["module_id"] == "SmartContractModule"
+                ):
+                    contract_type = attributes["contract_type"]
+                    node_id = None
+                    deployment_hash = None
+                    deployment_data = None
+                    public_ips = None
+                    public_ips_list = None
+                    solution_provider_id = None
+                    if "NodeContract" in contract_type:
+                        node_id = contract_type["NodeContract"]["node_id"]
+                        deployment_hash = contract_type["NodeContract"][
+                            "deployment_hash"
+                        ]
+                        deployment_data = contract_type["NodeContract"][
+                            "deployment_data"
+                        ]
+                        public_ips = contract_type["NodeContract"]["public_ips"]
+                        public_ips_list = str(
+                            contract_type["NodeContract"]["public_ips_list"]
+                        )
+                    updates.append(
+                        (
+                            "INSERT INTO ContractCreated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                attributes["twin_id"],
+                                attributes["version"],
+                                attributes["state"],
+                                node_id,
+                                block_number,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif (
+                    event_id == "NodeContractCanceled"
+                    and event["module_id"] == "SmartContractModule"
+                ):
+                    updates.append(
+                        (
+                            "INSERT INTO NodeContractCanceled VALUES(?, ?, ?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                attributes["node_id"],
+                                attributes["twin_id"],
+                                block_number,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif (
+                    event_id == "RentContractCanceled"
+                    and event["module_id"] == "SmartContractModule"
+                ):
+                    updates.append(
+                        (
+                            "INSERT INTO RentContractCanceled VALUES(?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                block_number,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif (
+                    event_id == "NameContractCanceled"
+                    and event["module_id"] == "SmartContractModule"
+                ):
+                    updates.append(
+                        (
+                            "INSERT INTO NameContractCanceled VALUES(?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                block_number,
+                                timestamp,
+                            ),
+                        )
+                    )
+                elif (
+                    event_id == "ContractUpdated"
+                    and event["module_id"] == "SmartContractModule"
+                ):
+                    contract_type = attributes["contract_type"]
+                    node_id = None
+                    deployment_hash = None
+                    deployment_data = None
+                    public_ips = None
+                    public_ips_list = None
+                    solution_provider_id = None
+                    if "NodeContract" in contract_type:
+                        node_id = contract_type["NodeContract"]["node_id"]
+                        deployment_hash = contract_type["NodeContract"][
+                            "deployment_hash"
+                        ]
+                        deployment_data = contract_type["NodeContract"][
+                            "deployment_data"
+                        ]
+                        public_ips = contract_type["NodeContract"]["public_ips"]
+                        public_ips_list = str(
+                            contract_type["NodeContract"]["public_ips_list"]
+                        )
+                    updates.append(
+                        (
+                            "INSERT INTO ContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                attributes["contract_id"],
+                                attributes["twin_id"],
+                                attributes["version"],
+                                attributes["state"],
+                                node_id,
+                                block_number,
+                                timestamp,
+                            ),
+                        )
+                    )
 
     return updates
 
@@ -472,7 +546,23 @@ def prep_db(con):
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS ContractBilled(contract_id, billing_timestamp, discount_level, amount_billed, block, event_index, timestamp, UNIQUE(event_index, block))"
+        "CREATE TABLE IF NOT EXISTS ContractBilled(contract_id, billing_timestamp, discount_level, amount_billed, standard_rewards, additional_rewards, block, event_index, timestamp, UNIQUE(event_index, block))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS BillingRepatriationEvents(from_account, to_account, amount, block, event_index, billing_event_index, timestamp, UNIQUE(event_index, block), FOREIGN KEY(block, billing_event_index) REFERENCES ContractBilled(block, event_index))"
+    )
+
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS BillingRepatriationEvents_query_idx ON BillingRepatriationEvents(from_account, timestamp)"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS RewardDistributed(contract_id, standard_rewards, additional_rewards, block, event_index, billing_event_index, timestamp, UNIQUE(event_index, block), FOREIGN KEY(block, event_index) REFERENCES ContractBilled(block, event_index))"
+    )
+
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS RewardDistributed_contract_id_ts ON RewardDistributed(contract_id, timestamp)"
     )
 
     con.execute(
@@ -501,14 +591,6 @@ def prep_db(con):
 
     con.execute(
         "CREATE TABLE IF NOT EXISTS ContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id, block))"
-    )
-
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS RewardDistributed(contract_id, standard_rewards, additional_rewards, block, event_index, timestamp, UNIQUE(event_index, block))"
-    )
-
-    con.execute(
-        "CREATE INDEX IF NOT EXISTS RewardDistributed_contract_id_ts ON RewardDistributed(contract_id, timestamp)"
     )
 
     con.execute(
