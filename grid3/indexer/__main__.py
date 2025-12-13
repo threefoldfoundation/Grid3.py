@@ -346,38 +346,58 @@ def process_block(block, events, spec_version):
                     and event["module_id"] == "SmartContractModule"
                 ):
                     contract_type = attributes["contract_type"]
-                    node_id = None
-                    deployment_hash = None
-                    deployment_data = None
-                    public_ips = None
-                    public_ips_list = None
-                    solution_provider_id = None
                     if "NodeContract" in contract_type:
-                        node_id = contract_type["NodeContract"]["node_id"]
-                        deployment_hash = contract_type["NodeContract"][
-                            "deployment_hash"
-                        ]
-                        deployment_data = contract_type["NodeContract"][
-                            "deployment_data"
-                        ]
-                        public_ips = contract_type["NodeContract"]["public_ips"]
-                        public_ips_list = str(
-                            contract_type["NodeContract"]["public_ips_list"]
-                        )
-                    updates.append(
-                        (
-                            "INSERT INTO ContractCreated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        node_contract = contract_type["NodeContract"]
+                        updates.append(
                             (
-                                attributes["contract_id"],
-                                attributes["twin_id"],
-                                attributes["version"],
-                                attributes["state"],
-                                node_id,
-                                block_number,
-                                timestamp,
-                            ),
+                                "INSERT INTO NodeContractCreated VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                (
+                                    attributes["contract_id"],
+                                    attributes["twin_id"],
+                                    attributes["version"],
+                                    attributes["state"],
+                                    node_contract["node_id"],
+                                    node_contract["deployment_hash"],
+                                    node_contract["deployment_data"],
+                                    node_contract["public_ips"],
+                                    str(node_contract["public_ips_list"]),
+                                    block_number,
+                                    timestamp,
+                                ),
+                            )
                         )
-                    )
+                    elif "RentContract" in contract_type:
+                        rent_contract = contract_type["RentContract"]
+                        updates.append(
+                            (
+                                "INSERT INTO RentContractCreated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                (
+                                    attributes["contract_id"],
+                                    attributes["twin_id"],
+                                    attributes["version"],
+                                    attributes["state"],
+                                    rent_contract["node_id"],
+                                    block_number,
+                                    timestamp,
+                                ),
+                            )
+                        )
+                    elif "NameContract" in contract_type:
+                        name_contract = contract_type["NameContract"]
+                        updates.append(
+                            (
+                                "INSERT INTO NameContractCreated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                (
+                                    attributes["contract_id"],
+                                    attributes["twin_id"],
+                                    attributes["version"],
+                                    attributes["state"],
+                                    name_contract["name"],
+                                    block_number,
+                                    timestamp,
+                                ),
+                            )
+                        )
                 elif (
                     event_id == "NodeContractCanceled"
                     and event["module_id"] == "SmartContractModule"
@@ -427,38 +447,58 @@ def process_block(block, events, spec_version):
                     and event["module_id"] == "SmartContractModule"
                 ):
                     contract_type = attributes["contract_type"]
-                    node_id = None
-                    deployment_hash = None
-                    deployment_data = None
-                    public_ips = None
-                    public_ips_list = None
-                    solution_provider_id = None
                     if "NodeContract" in contract_type:
-                        node_id = contract_type["NodeContract"]["node_id"]
-                        deployment_hash = contract_type["NodeContract"][
-                            "deployment_hash"
-                        ]
-                        deployment_data = contract_type["NodeContract"][
-                            "deployment_data"
-                        ]
-                        public_ips = contract_type["NodeContract"]["public_ips"]
-                        public_ips_list = str(
-                            contract_type["NodeContract"]["public_ips_list"]
-                        )
-                    updates.append(
-                        (
-                            "INSERT INTO ContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        node_contract = contract_type["NodeContract"]
+                        updates.append(
                             (
-                                attributes["contract_id"],
-                                attributes["twin_id"],
-                                attributes["version"],
-                                attributes["state"],
-                                node_id,
-                                block_number,
-                                timestamp,
-                            ),
+                                "INSERT INTO NodeContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                (
+                                    attributes["contract_id"],
+                                    attributes["twin_id"],
+                                    attributes["version"],
+                                    attributes["state"],
+                                    node_contract["node_id"],
+                                    node_contract["deployment_hash"],
+                                    node_contract["deployment_data"],
+                                    node_contract["public_ips"],
+                                    str(node_contract["public_ips_list"]),
+                                    block_number,
+                                    timestamp,
+                                ),
+                            )
                         )
-                    )
+                    elif "RentContract" in contract_type:
+                        rent_contract = contract_type["RentContract"]
+                        updates.append(
+                            (
+                                "INSERT INTO RentContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                (
+                                    attributes["contract_id"],
+                                    attributes["twin_id"],
+                                    attributes["version"],
+                                    attributes["state"],
+                                    rent_contract["node_id"],
+                                    block_number,
+                                    timestamp,
+                                ),
+                            )
+                        )
+                    elif "NameContract" in contract_type:
+                        name_contract = contract_type["NameContract"]
+                        updates.append(
+                            (
+                                "INSERT INTO NameContractUpdated VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                (
+                                    attributes["contract_id"],
+                                    attributes["twin_id"],
+                                    attributes["version"],
+                                    attributes["state"],
+                                    name_contract["name"],
+                                    block_number,
+                                    timestamp,
+                                ),
+                            )
+                        )
 
     return updates
 
@@ -574,7 +614,15 @@ def prep_db(con):
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS ContractCreated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS NodeContractCreated(contract_id, twin_id, version, state, node_id, deployment_hash, deployment_data, public_ips, public_ips_list, block, timestamp, UNIQUE(contract_id))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS RentContractCreated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id))"
+    )
+
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS NameContractCreated(contract_id, twin_id, version, state, name, block, timestamp, UNIQUE(contract_id))"
     )
 
     con.execute(
@@ -590,7 +638,13 @@ def prep_db(con):
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS ContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS NodeContractUpdated(contract_id, twin_id, version, state, node_id, deployment_hash, deployment_data, public_ips, public_ips_list, block, timestamp, UNIQUE(contract_id))"
+    )
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS RentContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id))"
+    )
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS NameContractUpdated(contract_id, twin_id, version, state, name, block, timestamp, UNIQUE(contract_id))"
     )
 
     con.execute(
