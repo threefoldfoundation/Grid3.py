@@ -626,25 +626,25 @@ def prep_db(con):
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NodeContractCanceled(contract_id, node_id, twin_id, block, timestamp, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS NodeContractCanceled(contract_id, node_id, twin_id, block, timestamp, UNIQUE(contract_id))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS RentContractCanceled(contract_id, block, timestamp, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS RentContractCanceled(contract_id, block, timestamp, UNIQUE(contract_id))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NameContractCanceled(contract_id, block, timestamp, UNIQUE(contract_id, block))"
+        "CREATE TABLE IF NOT EXISTS NameContractCanceled(contract_id, block, timestamp, UNIQUE(contract_id))"
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NodeContractUpdated(contract_id, twin_id, version, state, node_id, deployment_hash, deployment_data, public_ips, public_ips_list, block, timestamp, UNIQUE(contract_id))"
+        "CREATE TABLE IF NOT EXISTS NodeContractUpdated(contract_id, twin_id, version, state, node_id, deployment_hash, deployment_data, public_ips, public_ips_list, block, timestamp)"
     )
     con.execute(
-        "CREATE TABLE IF NOT EXISTS RentContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp, UNIQUE(contract_id))"
+        "CREATE TABLE IF NOT EXISTS RentContractUpdated(contract_id, twin_id, version, state, node_id, block, timestamp)"
     )
     con.execute(
-        "CREATE TABLE IF NOT EXISTS NameContractUpdated(contract_id, twin_id, version, state, name, block, timestamp, UNIQUE(contract_id))"
+        "CREATE TABLE IF NOT EXISTS NameContractUpdated(contract_id, twin_id, version, state, name, block, timestamp)"
     )
 
     con.execute(
