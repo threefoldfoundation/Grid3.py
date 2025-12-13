@@ -890,6 +890,20 @@ if __name__ == "__main__":
                     write_queue.qsize(),
                 )
             )
+            if block_queue.qsize() > 500:
+                # Estimate time remaining based on recent processing rate
+                rate = processed_this_period / SLEEP_TIME
+                if rate > 0:
+                    remaining_seconds = block_queue.qsize() / rate
+                    remaining_minutes = int(remaining_seconds / 60)
+                    remaining_hours = remaining_minutes // 60
+                    remaining_minutes = remaining_minutes % 60
+                    print(
+                        "Estimated time remaining: {} hours {} minutes".format(
+                            remaining_hours, remaining_minutes
+                        )
+                    )
+
             processed_count = new_count
 
             blocks_counter.inc(processed_this_period)
