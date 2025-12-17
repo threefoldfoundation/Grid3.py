@@ -187,13 +187,15 @@ def process_block(block, events, spec_version):
         ):
             contract_billed = None
             contract_billed_index = None
+            contract_id = None
             rewards_distributed = []
             reserves_repatriated = []
 
             # Probably the events are always in the same order, with
-            # ContractBille coming ahead of the other, and it thus it would work
-            # to just create the update inside this loop. But I'm not 100% sure
-            # and it could change later, so we collect first then process below
+            # ContractBilled coming ahead of the other, and it thus it would
+            # work to just create the update inside this loop. But I'm not 100%
+            # sure and it could change later, so we collect first then process
+            # below
             for event_index, event in extrinsic_events:
                 event_id = event.value["event_id"]
                 attributes = event.value["attributes"]
@@ -201,6 +203,7 @@ def process_block(block, events, spec_version):
                 if event_id == "ContractBilled":
                     contract_billed = event
                     contract_billed_index = event_index
+                    contract_id = (contract_billed["attributes"]["contract_id"],)
                 elif event_id == "RewardDistributed":
                     rewards_distributed.append((event_index, event))
                 elif event_id == "ReserveRepatriated":
@@ -226,8 +229,9 @@ def process_block(block, events, spec_version):
             for event_index, repatriation in reserves_repatriated:
                 updates.append(
                     (
-                        "INSERT INTO BillingRepatriationEvents(from_account, to_account, amount, block, event_index, billing_event_index, timestamp) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO BillingRepatriationEvents(contract_id, from_account, to_account, amount, block, event_index, billing_event_index, timestamp) VALUES(?, ?, ?, ?, ?, ?, ?)",
                         (
+                            contract_id,
                             repatriation["attributes"]["from_account"],
                             repatriation["attributes"]["to_account"],
                             repatriation["attributes"]["amount"],
@@ -590,7 +594,7 @@ def prep_db(con):
     )
 
     con.execute(
-        "CREATE TABLE IF NOT EXISTS BillingRepatriationEvents(from_account, to_account, amount, block, event_index, billing_event_index, timestamp, UNIQUE(event_index, block), FOREIGN KEY(block, billing_event_index) REFERENCES ContractBilled(block, event_index))"
+        "CREATE TABLE IF NOT EXISTS BillingRepatriationEvents(contract_id, from_account, to_account, amount, block, event_index, billing_event_index, timestamp, UNIQUE(event_index, block), FOREIGN KEY(block, billing_event_index) REFERENCES ContractBilled(block, event_index))"
     )
 
     con.execute(
