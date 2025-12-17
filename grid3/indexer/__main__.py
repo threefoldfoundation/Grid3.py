@@ -754,7 +754,7 @@ if __name__ == "__main__":
     # Start tfchain client
     client = tfchain.TFChain()
 
-    if args.start_block:
+    if args.start_block is not None:
         start_number = args.start_block
     elif args.start:
         start_number = client.find_block_minting(args.start)
