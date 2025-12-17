@@ -292,13 +292,35 @@ def process_block(block, events, spec_version):
                 attributes = event.value["attributes"]
 
                 if event_id == "NodeUptimeReported":
+                    # Handle both old and new versions of the uptime reporting extrinsic
+                    if call_function == "report_uptime":
+                        # Old format: attributes is a list of dicts
+                        node_id = attributes[0]["value"]
+                        uptime = attributes[2]["value"]
+                        timestamp_hint = attributes[1]["value"]
+                    elif call_function == "report_uptime_v2":
+                        # New format: attributes is a tuple
+                        node_id = attributes[0]
+                        uptime = attributes[2]
+                        timestamp_hint = attributes[1]
+                    else:
+                        # Fallback - try to detect format automatically
+                        if isinstance(attributes[0], dict):
+                            node_id = attributes[0]["value"]
+                            uptime = attributes[2]["value"]
+                            timestamp_hint = attributes[1]["value"]
+                        else:
+                            node_id = attributes[0]
+                            uptime = attributes[2]
+                            timestamp_hint = attributes[1]
+
                     updates.append(
                         (
                             "INSERT INTO NodeUptimeReported VALUES(?, ?, ?, ?, ?, ?)",
                             (
-                                attributes[0],
-                                attributes[2],
-                                attributes[1],
+                                node_id,
+                                uptime,
+                                timestamp_hint,
                                 block_number,
                                 event_index,
                                 timestamp,
