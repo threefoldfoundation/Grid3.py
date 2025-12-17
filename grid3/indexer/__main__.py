@@ -157,8 +157,23 @@ def new_connection(db_file=None):
 
 
 def process_block(block, events, spec_version):
+    updates = []
     block_number = block["header"]["number"]
     extrinsics = block["extrinsics"]
+
+    # Block 0 has no extrinsics, not even a timestamp. We will still mark it as
+    # processed
+    if len(extrinsics) == 0:
+        return updates
+
+    # Guard here in case the block format ever changes
+    call_module = extrinsics[0].value["call"]["call_module"]
+    call_function = extrinsics[0].value["call"]["call_function"]
+    if call_module != "Timestamp" or call_function != "set":
+        raise ValueError(
+            f"Expected Timestamp.set extrinsic in position 0, got {call_module}.{call_function}"
+        )
+
     timestamp = extrinsics[0].value["call"]["call_args"][0]["value"] // 1000
 
     events_by_extrinsic = [[] for _ in extrinsics]
@@ -166,8 +181,6 @@ def process_block(block, events, spec_version):
     for i, event in enumerate(events):
         if event.value["phase"] == "ApplyExtrinsic":
             events_by_extrinsic[event.extrinsic_idx].append((i, event))
-
-    updates = []
 
     for i in range(1, len(extrinsics)):
         extrinsic = extrinsics[i]
