@@ -7,6 +7,7 @@ from multiprocessing import JoinableQueue, Process
 from threading import Thread
 
 import prometheus_client
+import substrateinterface.exceptions
 from websocket._exceptions import (
     WebSocketAddressException,
     WebSocketConnectionClosedException,
@@ -89,6 +90,20 @@ def fetch_powers(block_number, db_file=None):
 
             block = client.sub.get_block(block_number=block_number)
             block_hash = block["header"]["hash"]
+
+            # This covers the fact that farmerbot related functions were added
+            # later. It also saves us from the case of block 0 where there is no
+            # timestamp extrinsic. This raises the question of what happens
+            # during the first month that farmerbot was live, but that has to be
+            # handled by consumer of this data.
+            try:
+                client.get_node_power(1, block_hash)
+            except substrateinterface.exceptions.StorageFunctionNotFound:
+                print(
+                    f"Skipping power fetch for block {block_number} because storage function not found for power state, suggesting farmerbot was not live at this time."
+                )
+                return
+
             timestamp = client.get_timestamp(block) // 1000
 
             max_node = client.get_node_id(block_hash)
