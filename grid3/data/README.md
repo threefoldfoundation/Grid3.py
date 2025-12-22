@@ -1,0 +1,3 @@
+The tfchain types are taken from [here](https://github.com/threefoldtech/tfchain_graphql/blob/master/typegen/typesBundle.json) and converted into the [format expected](https://github.com/JAMdotTech/py-scale-codec/blob/master/scalecodec/type_registry/test.json) by the Substrate Python library.
+
+Each "minmax" entry specifies the minimum and maximum runtime versions that each set of types should be applied to. There are no new types after version 100 or so, because that's when the chain moved to automatic metadata. Applying the types manually only matters when querying earlier versions of the runtime.

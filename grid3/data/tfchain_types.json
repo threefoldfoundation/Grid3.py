@@ -1,0 +1,688 @@
+{
+  "spec": {
+    "substrate-threefold": {
+      "types": [
+        {
+          "minmax": [9, null],
+          "types": {
+            "ContractLock": {
+              "type": "struct",
+              "type_mapping": [
+                ["amount_locked", "Balance"],
+                ["lock_updated", "u64"],
+                ["cycles", "u16"]
+              ]
+            },
+            "Farm": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["twinId", "u32"],
+                ["pricingPolicyId", "u32"],
+                ["certificationType", "CertificationType"],
+                ["publicIps", "Vec<PublicIP>"]
+              ]
+            },
+            "PublicIP": {
+              "type": "struct",
+              "type_mapping": [
+                ["ip", "Vec<u8>"],
+                ["gateway", "Vec<u8>"],
+                ["contractId", "u64"]
+              ]
+            },
+            "Entity": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["accountId", "AccountId"],
+                ["country", "Vec<u8>"],
+                ["city", "Vec<u8>"]
+              ]
+            },
+            "Twin": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["accountId", "AccountId"],
+                ["ip", "Vec<u8>"],
+                ["entities", "Vec<EntityProof>"]
+              ]
+            },
+            "EntityProof": {
+              "type": "struct",
+              "type_mapping": [
+                ["entityId", "u32"],
+                ["signature", "Vec<u8>"]
+              ]
+            },
+            "PublicConfig": {
+              "type": "struct",
+              "type_mapping": [
+                ["ipv4", "Vec<u8>"],
+                ["ipv6", "Vec<u8>"],
+                ["gw4", "Vec<u8>"],
+                ["gw6", "Vec<u8>"],
+                ["domain", "Vec<u8>"]
+              ]
+            },
+            "Location": {
+              "type": "struct",
+              "type_mapping": [
+                ["longitude", "Vec<u8>"],
+                ["latitude", "Vec<u8>"]
+              ]
+            },
+            "Resources": {
+              "type": "struct",
+              "type_mapping": [
+                ["hru", "u64"],
+                ["sru", "u64"],
+                ["cru", "u64"],
+                ["mru", "u64"]
+              ]
+            },
+            "Interface": {
+              "type": "struct",
+              "type_mapping": [
+                ["name", "Vec<u8>"],
+                ["mac", "Vec<u8>"],
+                ["ips", "Vec<Vec<u8>>"]
+              ]
+            },
+            "CertificationType": {
+              "type": "enum",
+              "type_mapping": [
+                ["Diy", "Null"],
+                ["Certified", "Null"]
+              ]
+            },
+            "CertificationCodeType": {
+              "type": "enum",
+              "type_mapping": [
+                ["Farm", "Null"],
+                ["Entity", "Null"]
+              ]
+            },
+
+            "CertificationCodes": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["description", "Vec<u8>"],
+                ["certificationCodeType", "CertificationCodeType"]
+              ]
+            },
+            "Policy": {
+              "type": "struct",
+              "type_mapping": [
+                ["value", "u32"],
+                ["unit", "Unit"]
+              ]
+            },
+            "Unit": {
+              "type": "enum",
+              "type_mapping": [
+                ["Bytes", "Null"],
+                ["Kilobytes", "Null"],
+                ["Megabytes", "Null"],
+                ["Gigabytes", "Null"],
+                ["Terrabytes", "Null"]
+              ]
+            },
+            "DiscountLevel": {
+              "type": "enum",
+              "type_mapping": [
+                ["None", "Null"],
+                ["Default", "Null"],
+                ["Bronze", "Null"],
+                ["Silver", "Null"],
+                ["Gold", "Null"]
+              ]
+            },
+            "NameRegistration": {
+              "type": "struct",
+              "type_mapping": [
+                ["nameRegistrationId", "u64"],
+                ["twinId", "u32"],
+                ["name", "Vec<u8>"]
+              ]
+            },
+            "FarmingPolicy": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["cu", "u32"],
+                ["su", "u32"],
+                ["nu", "u32"],
+                ["ipv4", "u32"],
+                ["timestamp", "u64"],
+                ["certificationType", "CertificationType"]
+              ]
+            },
+            "ContractBill": {
+              "type": "struct",
+              "type_mapping": [
+                ["contractId", "u64"],
+                ["timestamp", "u64"],
+                ["discountLevel", "DiscountLevel"],
+                ["amountBilled", "u128"]
+              ]
+            },
+            "PalletStorageVersion": {
+              "type": "enum",
+              "type_mapping": [
+                ["V1", "Null"],
+                ["V2", "Null"],
+                ["V3", "Null"]
+              ]
+            },
+            "StorageVersion": {
+              "type": "enum",
+              "type_mapping": [
+                ["V1Struct", "Null"],
+                ["V2Struct", "Null"],
+                ["V3Struct", "Null"]
+              ]
+            },
+            "Address": "MultiAddress",
+            "LookupSource": "MultiAddress",
+            "BalanceOf": "Balance",
+            "Public": "[u8;32]",
+            "U16F16": "[u8; 4]",
+            "BufferIndex": "u32",
+            "VestingInfo": {
+              "type": "struct",
+              "type_mapping": [
+                ["locked", "Balance"],
+                ["perBlock", "Balance"],
+                ["startingBlock", "BlockNumber"],
+                ["tftPrice", "U16F16"],
+                ["lastReleasedBlock", "BlockNumber"]
+              ]
+            },
+            "StellarTransaction": {
+              "type": "struct",
+              "type_mapping": [
+                ["amount", "Balance"],
+                ["target", "MultiAddress"]
+              ]
+            },
+            "MintTransaction": {
+              "type": "struct",
+              "type_mapping": [
+                ["amount", "u64"],
+                ["target", "AccountId"],
+                ["block", "BlockNumber"],
+                ["votes", "u32"]
+              ]
+            },
+            "BurnTransaction": {
+              "type": "struct",
+              "type_mapping": [
+                ["block", "BlockNumber"],
+                ["amount", "u64"],
+                ["target", "Vec<u8>"],
+                ["signatures", "Vec<StellarSignature>"],
+                ["sequenceNumber", "u64"]
+              ]
+            },
+            "RefundTransaction": {
+              "type": "struct",
+              "type_mapping": [
+                ["block", "BlockNumber"],
+                ["amount", "u64"],
+                ["target", "Vec<u8>"],
+                ["txHash", "Vec<u8>"],
+                ["signatures", "Vec<StellarSignature>"],
+                ["sequenceNumber", "u64"]
+              ]
+            },
+            "StellarSignature": {
+              "type": "struct",
+              "type_mapping": [
+                ["signature", "Vec<u8>"],
+                ["stellarPubkey", "Vec<u8>"]
+              ]
+            },
+            "Burn": {
+              "type": "struct",
+              "type_mapping": [
+                ["target", "AccountId"],
+                ["amount", "BalanceOf"],
+                ["block", "BlockNumber"],
+                ["message", "Vec<u8>"]
+              ]
+            },
+            "ValueStruct": {
+              "type": "struct",
+              "type_mapping": [["value", "U16F16"]]
+            },
+            "AccountInfo": "AccountInfoWithProviders",
+            "Keys": "SessionKeys2",
+            "SessionKeys1": "(AccountId)",
+            "TermsAndConditions": {
+              "type": "struct",
+              "type_mapping": [
+                ["accountId", "AccountId"],
+                ["timestamp", "u64"],
+                ["documentLink", "Vec<u8>"],
+                ["documentHash", "Vec<u8>"]
+              ]
+            },
+            "Validator": {
+              "type": "struct",
+              "type_mapping": [
+                ["validatorNodeAccount", "AccountId"],
+                ["stashAccount", "AccountId"],
+                ["description", "Vec<u8>"],
+                ["tfConnectId", "Vec<u8>"],
+                ["info", "Vec<u8>"],
+                ["state", "ValidatorRequestState"]
+              ]
+            },
+            "ValidatorRequestState": {
+              "type": "enum",
+              "type_mapping": [
+                ["Created", "Null"],
+                ["Approved", "Null"],
+                ["Validating", "Null"]
+              ]
+            },
+            "PricingPolicy": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["su", "Policy"],
+                ["cu", "Policy"],
+                ["nu", "Policy"],
+                ["ipu", "Policy"],
+                ["uniqueName", "Policy"],
+                ["domainName", "Policy"],
+                ["foundationAccount", "AccountId"],
+                ["certifiedSalesAccount", "AccountId"]
+              ]
+            },
+            "ContractData": {
+              "type": "enum",
+              "type_mapping": [
+                ["NodeContract", "NodeContract"],
+                ["NameContract", "NameContract"]
+              ]
+            },
+            "NodeContract": {
+              "type": "struct",
+              "type_mapping": [
+                ["nodeId", "u32"],
+                ["deploymentData", "Vec<u8>"],
+                ["deploymentHash", "Vec<u8>"],
+                ["publicIps", "u32"],
+                ["publicIpsList", "Vec<PublicIP>"]
+              ]
+            },
+            "NameContract": {
+              "type": "struct",
+              "type_mapping": [["name", "Vec<u8>"]]
+            },
+            "ContractBillingInformation": {
+              "type": "struct",
+              "type_mapping": [
+                ["previousNuReported", "u64"],
+                ["lastUpdated", "u64"],
+                ["amountUnbilled", "u64"]
+              ]
+            },
+            "ContractResources": {
+              "type": "struct",
+              "type_mapping": [
+                ["contractId", "u64"],
+                ["used", "Resources"]
+              ]
+            },
+            "NruConsumption": {
+              "type": "struct",
+              "type_mapping": [
+                ["contractId", "u64"],
+                ["timestamp", "u64"],
+                ["window", "u64"],
+                ["nru", "u64"]
+              ]
+            },
+            "Consumption": {
+              "type": "struct",
+              "type_mapping": [
+                ["contractId", "u64"],
+                ["timestamp", "u64"],
+                ["cru", "u64"],
+                ["sru", "u64"],
+                ["hru", "u64"],
+                ["mru", "u64"],
+                ["nru", "u64"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [9, 27],
+          "types": {
+            "Node": {
+              "version": "u32",
+              "id": "u32",
+              "farmId": "u32",
+              "twinId": "u32",
+              "resources": "Resources",
+              "location": "Location",
+              "country": "Vec<u8>",
+              "city": "Vec<u8>",
+              "publicConfig": "Option<PublicConfig>",
+              "created": "u64",
+              "farmingPolicyId": "u32",
+              "interfaces": "Vec<Interface>"
+            }
+          }
+        },
+        {
+          "minmax": [9, 25],
+          "types": {
+            "Contract": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["state", "ContractState"],
+                ["contractId", "u64"],
+                ["twinId", "u32"],
+                ["contractType", "ContractData"]
+              ]
+            },
+            "ContractState": {
+              "type": "enum",
+              "type_mapping": [
+                ["Created", "Null"],
+                ["Deleted", "Null"],
+                ["OutOfFunds", "Null"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [25, null],
+          "types": {
+            "Contract": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["state", "ContractState"],
+                ["contractId", "u64"],
+                ["twinId", "u32"],
+                ["contractType", "ContractData"]
+              ]
+            },
+            "ContractState": {
+              "type": "enum",
+              "type_mapping": [
+                ["Created", "Null"],
+                ["Deleted", "Cause"]
+              ]
+            },
+            "Cause": {
+              "type": "enum",
+              "type_mapping": [
+                ["CanceledByUser", "Null"],
+                ["OutOfFunds", "Null"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [28, 42],
+          "types": {
+            "Node": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["farmId", "u32"],
+                ["twinId", "u32"],
+                ["resources", "Resources"],
+                ["location", "Location"],
+                ["country", "Vec<u8>"],
+                ["city", "Vec<u8>"],
+                ["publicConfig", "Option<PublicConfig>"],
+                ["created", "u64"],
+                ["farmingPolicyId", "u32"],
+                ["interfaces", "Vec<Interface>"],
+                ["certificationType", "CertificationType"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [43, null],
+          "types": {
+            "Node": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["farmId", "u32"],
+                ["twinId", "u32"],
+                ["resources", "Resources"],
+                ["location", "Location"],
+                ["country", "Vec<u8>"],
+                ["city", "Vec<u8>"],
+                ["publicConfig", "Option<PublicConfig>"],
+                ["created", "u64"],
+                ["farmingPolicyId", "u32"],
+                ["interfaces", "Vec<Interface>"],
+                ["certificationType", "CertificationType"],
+                ["secureBoot", "bool"],
+                ["virtualized", "bool"],
+                ["serialNumber", "Vec<u8>"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [50, null],
+          "types": {
+            "ContractData": {
+              "type": "enum",
+              "type_mapping": [
+                ["NodeContract", "NodeContract"],
+                ["NameContract", "NameContract"],
+                ["RentContract", "RentContract"]
+              ]
+            },
+            "RentContract": {
+              "type": "struct",
+              "type_mapping": [["nodeId", "u32"]]
+            },
+            "Farm": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["twinId", "u32"],
+                ["pricingPolicyId", "u32"],
+                ["certificationType", "CertificationType"],
+                ["publicIps", "Vec<PublicIP>"],
+                ["dedicatedFarm", "bool"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [51, null],
+          "types": {
+            "PricingPolicy": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["su", "Policy"],
+                ["cu", "Policy"],
+                ["nu", "Policy"],
+                ["ipu", "Policy"],
+                ["uniqueName", "Policy"],
+                ["domainName", "Policy"],
+                ["foundationAccount", "AccountId"],
+                ["certifiedSalesAccount", "AccountId"],
+                ["discountForDedicatedNodes", "u8"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [59, null],
+          "types": {
+            "ContractState": {
+              "type": "enum",
+              "type_mapping": [
+                ["Created", "Null"],
+                ["Deleted", "Null"],
+                ["OutOfFunds", "Null"],
+                ["GracePeriod", "u64"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [63, null],
+          "types": {
+            "Farm": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["twinId", "u32"],
+                ["pricingPolicyId", "u32"],
+                ["certification", "FarmCertification"],
+                ["publicIps", "Vec<PublicIP>"],
+                ["dedicatedFarm", "bool"],
+                ["farmingPolicyLimits", "Option<FarmingPolicyLimit>"]
+              ]
+            },
+            "FarmingPolicyLimit": {
+              "type": "struct",
+              "type_mapping": [
+                ["farmingPolicyId", "u32"],
+                ["cu", "Option<u64>"],
+                ["su", "Option<u64>"],
+                ["end", "Option<u64>"],
+                ["nodeCount", "Option<u32>"],
+                ["nodeCertification", "bool"]
+              ]
+            },
+            "Node": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["farmId", "u32"],
+                ["twinId", "u32"],
+                ["resources", "Resources"],
+                ["location", "Location"],
+                ["country", "Vec<u8>"],
+                ["city", "Vec<u8>"],
+                ["publicConfig", "Option<PublicConfig>"],
+                ["created", "u64"],
+                ["farmingPolicyId", "u32"],
+                ["interfaces", "Vec<Interface>"],
+                ["certification", "NodeCertification"],
+                ["secureBoot", "bool"],
+                ["virtualized", "bool"],
+                ["serialNumber", "Vec<u8>"],
+                ["connectionPrice", "u32"]
+              ]
+            },
+            "NodeCertification": {
+              "type": "enum",
+              "type_mapping": [
+                ["Diy", "Null"],
+                ["Certified", "Null"]
+              ]
+            },
+            "FarmCertification": {
+              "type": "enum",
+              "type_mapping": [
+                ["NotCertified", "Null"],
+                ["Gold", "Null"]
+              ]
+            },
+            "FarmingPolicy": {
+              "type": "struct",
+              "type_mapping": [
+                ["version", "u32"],
+                ["id", "u32"],
+                ["name", "Vec<u8>"],
+                ["cu", "u32"],
+                ["su", "u32"],
+                ["nu", "u32"],
+                ["ipv4", "u32"],
+                ["minimalUptime", "u16"],
+                ["policyCreated", "BlockNumber"],
+                ["policyEnd", "BlockNumber"],
+                ["immutable", "bool"],
+                ["default", "bool"],
+                ["nodeCertification", "NodeCertification"],
+                ["farmCertification", "FarmCertification"]
+              ]
+            },
+            "ContractLock": {
+              "type": "struct",
+              "type_mapping": [
+                ["amount_locked", "Balance"],
+                ["lock_updated", "u64"],
+                ["cycles", "u16"]
+              ]
+            },
+            "DaoProposal": {
+              "type": "struct",
+              "type_mapping": [
+                ["index", "u32"],
+                ["description", "Vec<u8>"],
+                ["link", "Vec<u8>"]
+              ]
+            },
+            "DaoVotes": {
+              "type": "struct",
+              "type_mapping": [
+                ["index", "u32"],
+                ["threshold", "u32"],
+                ["ayes", "Vec<VoteWeight>"],
+                ["nayes", "Vec<VoteWeight>"],
+                ["end", "BlockNumber"],
+                ["vetos", "Vec<AccountId>"]
+              ]
+            },
+            "VoteWeight": {
+              "type": "struct",
+              "type_mapping": [
+                ["farmId", "u32"],
+                ["weight", "u64"]
+              ]
+            }
+          }
+        },
+        {
+          "minmax": [101, null],
+          "types": {}
+        }
+      ]
+    }
+  }
+}
