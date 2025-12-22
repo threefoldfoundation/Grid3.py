@@ -1,3 +1,6 @@
+import importlib.resources
+import json
+
 import substrateinterface
 from substrateinterface.exceptions import SubstrateRequestException
 
@@ -11,8 +14,17 @@ class TFChain:
         else:
             url = url = "wss://tfchain.{}.grid.tf".format(network)
 
+        # Load the type registry from package data. We don't add this to our
+        # substrate client yet, because it doesn't have the ability to apply
+        # different registries for different chain versions. We'll have to do
+        # that ourselves by wrapping the relevant functions.
+        with importlib.resources.open_text(__name__, "data/tfchain_types.json") as file:
+            self.types = json.load(file)
+
         self.sub = substrateinterface.SubstrateInterface(
-            url=url, ss58_format=42, type_registry_preset="polkadot"
+            url=url,
+            ss58_format=42,
+            type_registry_preset="polkadot",
         )
 
         self.keys = None

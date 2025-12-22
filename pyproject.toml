@@ -6,6 +6,7 @@ authors = ["Scott Yeager <scott@threefold.io>"]
 license = "Apache-2.0"
 readme = "README.md"
 packages = [{include = "grid3"}]
+include = ["data/*.json"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
@@ -23,4 +24,4 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.extras]
 rmb = ["redis"]
 tfchain = ["substrate-interface"]
-indexer = ["prometheus-client"]
+indexer = ["prometheus-client", "substrate-interface"]
