@@ -35,6 +35,7 @@ class Archiver:
         check_interval: int = 60,
         db_timeout: int = 30,
         dict_size: int = 1024,
+        training_blocks: int = 1000,
     ):
         """Initialize the independent archiver.
 
@@ -45,6 +46,7 @@ class Archiver:
             check_interval: Seconds between checking for new blocks
             db_timeout: SQLite connection timeout in seconds
             dict_size: Size of the zstd dictionary in bytes (default: 1024)
+            training_blocks: Number of blocks to sample for dictionary training (default: 1000)
         """
         self.db_path = db_path
         self.batch_size = batch_size
@@ -52,6 +54,7 @@ class Archiver:
         self.check_interval = check_interval
         self.db_timeout = db_timeout
         self.dict_size = dict_size
+        self.training_blocks = training_blocks
         self.zstd_dict: Optional[zstd.ZstdDict] = None
 
         # Initialize queues
@@ -594,7 +597,9 @@ class Archiver:
         length = self.load_dict_from_db(con)
         if length is None:
             print("No compression dictionary found in database, training new one...")
-            sample_blocks = self.sample_random_blocks(client, count=1000)
+            sample_blocks = self.sample_random_blocks(
+                client, count=self.training_blocks
+            )
             self.zstd_dict = self.train_compression_dict(sample_blocks, self.dict_size)
             self.save_dict_to_db(con, self.zstd_dict.dict_content)
             print("Compression dictionary saved to database")

@@ -56,6 +56,12 @@ def main():
         help="Block number to start archiving from (requires --start-from-scratch)",
         type=int,
     )
+    parser.add_argument(
+        "--training-blocks",
+        help="Number of blocks to sample for compression dictionary training",
+        type=int,
+        default=1000,
+    )
 
     args = parser.parse_args()
 
@@ -65,6 +71,7 @@ def main():
         batch_size=args.batch_size,
         max_workers=args.max_workers,
         check_interval=args.check_interval,
+        training_blocks=args.training_blocks,
     )
 
     # Run the archiver
