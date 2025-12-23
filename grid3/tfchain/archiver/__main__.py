@@ -80,6 +80,11 @@ class IndependentArchiver:
         INSERT OR IGNORE INTO archive_metadata(key, value)
         VALUES('last_archived_block', '0')
         """)
+        # Store batch size as metadata
+        con.execute("""
+        INSERT OR REPLACE INTO archive_metadata(key, value)
+        VALUES('batch_size', ?)
+        """, (str(self.batch_size),))
         con.commit()
     def get_last_archived_block(self, con: sqlite3.Connection) -> int:
         """Get the last archived block number from metadata."""
@@ -87,6 +92,25 @@ class IndependentArchiver:
             "SELECT value FROM archive_metadata WHERE key='last_archived_block'"
         ).fetchone()
         return int(result[0]) if result else 0
+    
+    def get_batch_size_from_metadata(self, con: sqlite3.Connection) -> int:
+        """Get the batch size from metadata."""
+        result = con.execute(
+            "SELECT value FROM archive_metadata WHERE key='batch_size'"
+        ).fetchone()
+        return int(result[0]) if result else self.batch_size
+    
+    def update_batch_size_in_metadata(self, con: sqlite3.Connection, batch_size: int):
+        """Update the batch size in metadata."""
+        con.execute(
+            "UPDATE archive_metadata SET value=? WHERE key='batch_size'",
+            (str(batch_size),)
+        )
+        con.commit()
+    
+    def get_current_batch_size(self, con: sqlite3.Connection) -> int:
+        """Get the current batch size from metadata, falling back to instance batch_size if not found."""
+        return self.get_batch_size_from_metadata(con)
     def update_last_archived_block(self, con: sqlite3.Connection, block_number: int):
         """Update the last archived block number in metadata."""
         con.execute(
@@ -332,6 +356,12 @@ class IndependentArchiver:
         con = self.new_connection()
         self.prepare_database(con)
 
+        # Check if batch size has changed and update if needed
+        stored_batch_size = self.get_batch_size_from_metadata(con)
+        if stored_batch_size != self.batch_size:
+            print(f"Batch size changed from {stored_batch_size} to {self.batch_size}")
+            self.update_batch_size_in_metadata(con, self.batch_size)
+
         # Initialize TFChain client
         client = tfchain.TFChain()
 
@@ -398,4 +428,4 @@ class IndependentArchiver:
             # Wait for processes to finish
             for proc in worker_processes:
                 proc.join(timeout=30)
-            writer_proc.join(timeout=30
+            writer_proc.join(timeout=30)
