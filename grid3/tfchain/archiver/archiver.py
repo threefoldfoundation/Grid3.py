@@ -398,8 +398,14 @@ class Archiver:
             "block_count": len(blocks),
         }
 
-    def archive_batch_worker(self):
+    def archive_batch_worker(self, dict_bytes):
         """Worker process that processes block batches for archiving."""
+        # Reconstruct the zstd dictionary from bytes
+        if dict_bytes:
+            self.zstd_dict = zstd.ZstdDict(dict_bytes)
+        else:
+            self.zstd_dict = None
+
         client = tfchain.TFChain()
 
         while self.running:
@@ -485,7 +491,9 @@ class Archiver:
         Returns:
             The started Process object
         """
-        proc = Process(target=self.archive_batch_worker)
+        # Pass dictionary bytes instead of the object for pickle compatibility
+        dict_bytes = self.zstd_dict.dict_content if self.zstd_dict else None
+        proc = Process(target=self.archive_batch_worker, args=(dict_bytes,))
         proc.daemon = True
         proc.start()
         return proc
