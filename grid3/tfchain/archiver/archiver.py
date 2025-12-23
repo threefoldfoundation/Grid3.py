@@ -292,9 +292,9 @@ class Archiver:
             block_number = random.randint(1, current_height)
 
             try:
-                block = client.sub.get_block(block_number=block_number)
+                block = client.get_block(block_number=block_number)
                 # Get events for this block too
-                block["events"] = client.sub.get_events(block["header"]["hash"])
+                block["events"] = client.get_events(block["header"]["hash"])
                 sampled_blocks.append(block)
 
                 if len(sampled_blocks) % 100 == 0:
@@ -319,12 +319,17 @@ class Archiver:
         Returns:
             Tuple of (block, events, spec_version)
         """
-        block = client.sub.get_block(block_number=block_number)
+        block = client.get_block(block_number=block_number)
         if block is None:
             raise ValueError(f"Block {block_number} not found")
         block_hash = block["header"]["hash"]
-        events = client.sub.get_events(block_hash) or {}
-        spec_version = client.sub.get_block_runtime_version(block_hash)["specVersion"]
+        events = client.get_events(block_hash) or {}
+        if type(client.sub.runtime_version) is int:
+            spec_version = client.sub.runtime_version
+        else:
+            raise ValueError(
+                f"Invalid runtime version type: {type(client.sub.runtime_version)}"
+            )
         return block, dict(events), spec_version
 
     def fetch_block_range(
