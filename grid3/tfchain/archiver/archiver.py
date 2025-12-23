@@ -479,6 +479,17 @@ class Archiver:
             finally:
                 self.write_queue.task_done()
 
+    def _spawn_worker(self) -> Process:
+        """Create and start a new worker process.
+
+        Returns:
+            The started Process object
+        """
+        proc = Process(target=self.archive_batch_worker)
+        proc.daemon = True
+        proc.start()
+        return proc
+
     def get_current_block_height(self, client: tfchain.TFChain) -> int:
         """Get the current block height from the chain.
 
@@ -616,12 +627,7 @@ class Archiver:
             self.queue_new_batches(con, client)
 
         # Start worker processes
-        worker_processes = []
-        for i in range(self.max_workers):
-            proc = Process(target=self.archive_batch_worker)
-            proc.daemon = True
-            proc.start()
-            worker_processes.append(proc)
+        worker_processes = [self._spawn_worker() for _ in range(self.max_workers)]
 
         # Start database writer process
         writer_proc = Process(target=self.db_writer)
@@ -644,10 +650,7 @@ class Archiver:
 
                 # Spawn replacement workers if any died
                 while len(worker_processes) < self.max_workers:
-                    proc = Process(target=self.archive_batch_worker)
-                    proc.daemon = True
-                    proc.start()
-                    worker_processes.append(proc)
+                    worker_processes.append(self._spawn_worker())
                     print(f"Started replacement worker (total: {len(worker_processes)})")
 
                 # Print status
