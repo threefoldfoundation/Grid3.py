@@ -55,7 +55,7 @@ class Archiver:
         self.db_timeout = db_timeout
         self.dict_size = dict_size
         self.training_blocks = training_blocks
-        self.zstd_dict: Optional[zstd.ZstdDict] = None
+        self.zstd_dict_bytes: Optional[bytes] = None
 
         # Initialize queues
         self.block_queue = JoinableQueue()
@@ -166,8 +166,9 @@ class Archiver:
         # Serialize blocks to JSON
         serialized = json.dumps(blocks, default=self._serialize_default).encode()
         # Compress with zstd, using dictionary if available
-        if self.zstd_dict is not None:
-            compressed = zstd.compress(serialized, zstd_dict=self.zstd_dict)
+        if self.zstd_dict_bytes is not None:
+            zstd_dict = zstd.ZstdDict(self.zstd_dict_bytes)
+            compressed = zstd.compress(serialized, zstd_dict=zstd_dict)
         else:
             compressed = zstd.compress(serialized)
         return compressed
@@ -182,8 +183,9 @@ class Archiver:
             List of decompressed block dictionaries
         """
         # Decompress with zstd, using dictionary if available
-        if self.zstd_dict:
-            decompressed = zstd.decompress(compressed_data, zstd_dict=self.zstd_dict)
+        if self.zstd_dict_bytes:
+            zstd_dict = zstd.ZstdDict(self.zstd_dict_bytes)
+            decompressed = zstd.decompress(compressed_data, zstd_dict=zstd_dict)
         else:
             decompressed = zstd.decompress(compressed_data)
         # Deserialize JSON
@@ -240,13 +242,13 @@ class Archiver:
             con: SQLite connection
 
         Returns:
-            Dictionary bytes if found, None if not found
+            Dictionary bytes length if found, None if not found
         """
         try:
             cursor = con.execute("SELECT value FROM kv WHERE key='zstd_dict'")
             result = cursor.fetchone()
             if result:
-                self.zstd_dict = zstd.ZstdDict(result[0])
+                self.zstd_dict_bytes = result[0]
                 return len(result[0])
             else:
                 return None
@@ -254,17 +256,17 @@ class Archiver:
             print(f"Error loading dictionary from DB: {e}")
             return None
 
-    def save_dict_to_db(self, con: sqlite3.Connection, zstd_dict: bytes):
+    def save_dict_to_db(self, con: sqlite3.Connection, zstd_dict_bytes: bytes):
         """Save compression dictionary to database.
 
         Args:
             con: SQLite connection
-            zstd_dict: Dictionary bytes to save
+            zstd_dict_bytes: Dictionary bytes to save
         """
         try:
             con.execute(
                 "INSERT OR REPLACE INTO kv(key, value) VALUES(?, ?)",
-                ("zstd_dict", zstd_dict),
+                ("zstd_dict", zstd_dict_bytes),
             )
             con.commit()
         except Exception as e:
@@ -619,8 +621,9 @@ class Archiver:
             sample_blocks = self.sample_random_blocks(
                 client, count=self.training_blocks
             )
-            self.zstd_dict = self.train_compression_dict(sample_blocks, self.dict_size)
-            self.save_dict_to_db(con, self.zstd_dict.dict_content)
+            zstd_dict = self.train_compression_dict(sample_blocks, self.dict_size)
+            self.zstd_dict_bytes = zstd_dict.dict_content
+            self.save_dict_to_db(con, self.zstd_dict_bytes)
             print("Compression dictionary saved to database")
         else:
             print(f"Loaded compression dictionary from database ({length} bytes)")
