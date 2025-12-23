@@ -58,7 +58,6 @@ class Archiver:
         self.dict_size = dict_size
         self.training_blocks = training_blocks
         self.tfchain_url = tfchain_url
-        self.zstd_dict_bytes: Optional[bytes] = None
 
         # Initialize queues
         self.block_queue = JoinableQueue()
@@ -69,6 +68,16 @@ class Archiver:
         # State tracking
         self.last_archived_block = 0
         self.running = True
+
+        # Initialize database connection and load dictionary
+        con = self.new_connection()
+        self.prepare_database(con)
+
+        # Try to load compression dictionary from database
+        self.zstd_dict_bytes: Optional[bytes] = self.load_dict_from_db(con)
+
+        # Close the connection as it will be reopened when needed
+        con.close()
 
     def new_connection(self) -> sqlite3.Connection:
         """Create a new database connection."""
@@ -185,13 +194,63 @@ class Archiver:
             List of decompressed block dictionaries
         """
         # Decompress with zstd, using dictionary if available
-        if self.zstd_dict_bytes:
+        if self.zstd_dict_bytes is not None:
             zstd_dict = zstd.ZstdDict(self.zstd_dict_bytes)
             decompressed = zstd.decompress(compressed_data, zstd_dict=zstd_dict)
         else:
             decompressed = zstd.decompress(compressed_data)
         # Deserialize JSON
         blocks = json.loads(decompressed.decode())
+        return blocks
+
+    def retrieve_blocks_as_json(self, start_block: int, end_block: int) -> List[Dict]:
+        """Retrieve a range of blocks from the archive as JSON.
+
+        Args:
+            start_block: Starting block number (inclusive)
+            end_block: Ending block number (inclusive)
+
+        Returns:
+            List of block dictionaries in the requested range
+
+        Raises:
+            ValueError: If start_block > end_block
+        """
+        if start_block > end_block:
+            raise ValueError("start_block must be less than or equal to end_block")
+
+        con = self.new_connection()
+
+        # Query for all batches that overlap with the requested range
+        cursor = con.execute(
+            """
+            SELECT start_block, end_block, compressed_data
+            FROM archive_blocks
+            WHERE end_block >= ? AND start_block <= ?
+            ORDER BY start_block
+            """,
+            (start_block, end_block),
+        )
+
+        blocks = []
+        for row in cursor:
+            batch_start, batch_end, compressed_data = row
+            # Decompress the batch
+            batch_blocks = self.decompress_block_batch(compressed_data)
+
+            # Check if the entire batch fits within the requested range
+            if batch_start >= start_block and batch_end <= end_block:
+                # Entire batch is within range, add all blocks
+                blocks.extend(batch_blocks)
+            else:
+                # Only part of the batch is within range, take a slice
+                # Find the slice indices within this batch
+                start_idx = max(0, start_block - batch_start)
+                end_idx = min(len(batch_blocks) - 1, end_block - batch_start)
+
+                # Add only the blocks in the slice using slice syntax
+                blocks.extend(batch_blocks[start_idx : end_idx + 1])
+
         return blocks
 
     def _serialize_default(self, obj):
@@ -237,7 +296,7 @@ class Archiver:
         print(f"Trained zstd dictionary with size {len(zstd_dict)} bytes")
         return zstd_dict
 
-    def load_dict_from_db(self, con: sqlite3.Connection) -> Optional[int]:
+    def load_dict_from_db(self, con: sqlite3.Connection) -> Optional[bytes]:
         """Load compression dictionary from database.
 
         Args:
@@ -246,16 +305,12 @@ class Archiver:
         Returns:
             Dictionary bytes length if found, None if not found
         """
-        try:
-            cursor = con.execute("SELECT value FROM kv WHERE key='zstd_dict'")
-            result = cursor.fetchone()
-            if result:
-                self.zstd_dict_bytes = result[0]
-                return len(result[0])
-            else:
-                return None
-        except Exception as e:
-            print(f"Error loading dictionary from DB: {e}")
+        cursor = con.execute("SELECT value FROM kv WHERE key='zstd_dict'")
+        result = cursor.fetchone()
+        if result:
+            self.zstd_dict_bytes = result[0]
+            return result[0]
+        else:
             return None
 
     def save_dict_to_db(self, con: sqlite3.Connection, zstd_dict_bytes: bytes):
@@ -594,7 +649,6 @@ class Archiver:
 
         # Initialize database
         con = self.new_connection()
-        self.prepare_database(con)
 
         # Check if batch size has changed and update if needed
         stored_batch_size = self.get_batch_size_from_metadata(con)
@@ -605,10 +659,9 @@ class Archiver:
         # Initialize TFChain client
         client = tfchain.TFChain()
 
-        # Load or train compression dictionary
-        length = self.load_dict_from_db(con)
-        if length is None:
-            print("No compression dictionary found in database, training new one...")
+        # We attempt to load the dict during init, if None it wasn't found
+        if self.zstd_dict_bytes is None:
+            print("No compression dictionary found, training new one...")
             sample_blocks = self.sample_random_blocks(
                 client, count=self.training_blocks
             )
@@ -616,8 +669,6 @@ class Archiver:
             self.zstd_dict_bytes = zstd_dict.dict_content
             self.save_dict_to_db(con, self.zstd_dict_bytes)
             print("Compression dictionary saved to database")
-        else:
-            print(f"Loaded compression dictionary from database ({length} bytes)")
 
         # Start from scratch if requested
         if start_from_scratch:
