@@ -36,7 +36,7 @@ class Archiver:
         db_timeout: int = 30,
         dict_size: int = 1024,
         training_blocks: int = 1000,
-        tfchain_url: Optional[str] = None,
+        tfchain_url: str = "wss://tfchain.grid.tf",
     ):
         """Initialize the independent archiver.
 
@@ -48,6 +48,7 @@ class Archiver:
             db_timeout: SQLite connection timeout in seconds
             dict_size: Size of the zstd dictionary in bytes (default: 1024)
             training_blocks: Number of blocks to sample for dictionary training (default: 1000)
+            tfchain_url: URL of the tfchain node to connect to (default: "wss://tfchain.grid.tf")
         """
         self.db_path = db_path
         self.batch_size = batch_size
