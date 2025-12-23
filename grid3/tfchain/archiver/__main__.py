@@ -9,16 +9,19 @@ Key features:
 - Compressed storage of complete block data including events
 - Independent operation from the indexer
 """
-import argparse
+
 import datetime
 import json
-import os
 import sqlite3
 import time
 from multiprocessing import JoinableQueue, Process
 from typing import Dict, List, Optional, Tuple
+
 import zstd
+
 from .. import tfchain
+
+
 class IndependentArchiver:
     def __init__(
         self,
@@ -49,11 +52,13 @@ class IndependentArchiver:
         # State tracking
         self.last_archived_block = 0
         self.running = True
+
     def new_connection(self) -> sqlite3.Connection:
         """Create a new database connection."""
         con = sqlite3.connect(self.db_path, timeout=self.db_timeout)
         con.execute("PRAGMA journal_mode=wal")
         return con
+
     def prepare_database(self, con: sqlite3.Connection):
         """Prepare the database tables for archiving."""
         # Create archive_blocks table for storing compressed block batches
@@ -81,43 +86,49 @@ class IndependentArchiver:
         VALUES('last_archived_block', '0')
         """)
         # Store batch size as metadata
-        con.execute("""
+        con.execute(
+            """
         INSERT OR REPLACE INTO archive_metadata(key, value)
         VALUES('batch_size', ?)
-        """, (str(self.batch_size),))
+        """,
+            (str(self.batch_size),),
+        )
         con.commit()
+
     def get_last_archived_block(self, con: sqlite3.Connection) -> int:
         """Get the last archived block number from metadata."""
         result = con.execute(
             "SELECT value FROM archive_metadata WHERE key='last_archived_block'"
         ).fetchone()
         return int(result[0]) if result else 0
-    
+
     def get_batch_size_from_metadata(self, con: sqlite3.Connection) -> int:
         """Get the batch size from metadata."""
         result = con.execute(
             "SELECT value FROM archive_metadata WHERE key='batch_size'"
         ).fetchone()
         return int(result[0]) if result else self.batch_size
-    
+
     def update_batch_size_in_metadata(self, con: sqlite3.Connection, batch_size: int):
         """Update the batch size in metadata."""
         con.execute(
             "UPDATE archive_metadata SET value=? WHERE key='batch_size'",
-            (str(batch_size),)
+            (str(batch_size),),
         )
         con.commit()
-    
+
     def get_current_batch_size(self, con: sqlite3.Connection) -> int:
         """Get the current batch size from metadata, falling back to instance batch_size if not found."""
         return self.get_batch_size_from_metadata(con)
+
     def update_last_archived_block(self, con: sqlite3.Connection, block_number: int):
         """Update the last archived block number in metadata."""
         con.execute(
             "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
-            (str(block_number),)
+            (str(block_number),),
         )
         con.commit()
+
     def compress_block_batch(self, blocks: List[Dict]) -> bytes:
         """Compress a batch of blocks using zstd.
         Args:
@@ -131,6 +142,7 @@ class IndependentArchiver:
         # Compress with zstd
         compressed = zstd.compress(serialized)
         return compressed
+
     def decompress_block_batch(self, compressed_data: bytes) -> List[Dict]:
         """Decompress a batch of blocks.
         Args:
@@ -144,6 +156,7 @@ class IndependentArchiver:
         # Deserialize JSON
         blocks = json.loads(decompressed.decode())
         return blocks
+
     def _serialize_default(self, obj):
         """Default serialization function for objects that aren't JSON serializable."""
         if hasattr(obj, "serialize"):
@@ -152,7 +165,10 @@ class IndependentArchiver:
             return obj.__dict__
         else:
             return str(obj)
-    def get_block_data(self, client: tfchain.TFChain, block_number: int) -> Tuple[Dict, Dict, int]:
+
+    def get_block_data(
+        self, client: tfchain.TFChain, block_number: int
+    ) -> Tuple[Dict, Dict, int]:
         """Get block data including events and spec version.
         Args:
             client: TFChain client
@@ -165,7 +181,10 @@ class IndependentArchiver:
         events = client.sub.get_events(block_hash)
         spec_version = client.sub.get_block_runtime_version(block_hash)["specVersion"]
         return block, events, spec_version
-    def fetch_block_range(self, client: tfchain.TFChain, start_block: int, end_block: int) -> List[Tuple[int, Dict, Dict, int]]:
+
+    def fetch_block_range(
+        self, client: tfchain.TFChain, start_block: int, end_block: int
+    ) -> List[Tuple[int, Dict, Dict, int]]:
         """Fetch a range of blocks with their data.
         Args:
             client: TFChain client
@@ -183,7 +202,10 @@ class IndependentArchiver:
                 print(f"Warning: Could not fetch block {block_number}: {e}")
                 continue
         return blocks_data
-    def process_block_batch(self, blocks_data: List[Tuple[int, Dict, Dict, int]]) -> Dict:
+
+    def process_block_batch(
+        self, blocks_data: List[Tuple[int, Dict, Dict, int]]
+    ) -> Dict:
         """Process a batch of blocks for archiving.
         Args:
             blocks_data: List of tuples (block_number, block, events, spec_version)
@@ -196,7 +218,9 @@ class IndependentArchiver:
         blocks = []
         start_block = blocks_data[0][0]
         end_block = blocks_data[-1][0]
-        spec_version = blocks_data[0][3]  # All blocks in batch should have same spec version
+        spec_version = blocks_data[0][
+            3
+        ]  # All blocks in batch should have same spec version
         for block_number, block, events, _ in blocks_data:
             # Add events to block for complete archive
             block_with_events = block.copy()
@@ -212,6 +236,7 @@ class IndependentArchiver:
             "spec_version": spec_version,
             "block_count": len(blocks),
         }
+
     def archive_batch_worker(self):
         """Worker process that processes block batches for archiving."""
         con = self.new_connection()
@@ -244,6 +269,7 @@ class IndependentArchiver:
                 self.block_queue.put(batch_range)
             finally:
                 self.block_queue.task_done()
+
     def db_writer(self):
         """Database writer process that handles writing archive batches."""
         con = self.new_connection()
@@ -284,6 +310,7 @@ class IndependentArchiver:
                 print(f"Failed job: {job}")
             finally:
                 self.write_queue.task_done()
+
     def get_current_block_height(self, client: tfchain.TFChain) -> int:
         """Get the current block height from the chain."""
         try:
@@ -292,6 +319,7 @@ class IndependentArchiver:
         except Exception as e:
             print(f"Error getting current block height: {e}")
             return self.last_archived_block  # Return last known block if error
+
     def queue_new_batches(self, con: sqlite3.Connection, client: tfchain.TFChain):
         """Queue new batches of blocks that need to be archived."""
         current_height = self.get_current_block_height(client)
@@ -303,7 +331,9 @@ class IndependentArchiver:
             return 0
         # Calculate batches to process
         start_block = last_archived + 1
-        end_block = min(current_height, last_archived + self.batch_size * self.max_workers)
+        end_block = min(
+            current_height, last_archived + self.batch_size * self.max_workers
+        )
 
         print(f"Queuing blocks {start_block} to {end_block}")
         # Queue batches
@@ -314,6 +344,7 @@ class IndependentArchiver:
             queued_batches += 1
         print(f"Queued {queued_batches} batches for processing")
         return queued_batches
+
     def archive_from_scratch(self, client: tfchain.TFChain, start_block: int = 0):
         """Archive the chain from scratch starting at a specific block."""
         con = self.new_connection()
@@ -323,7 +354,7 @@ class IndependentArchiver:
         # Reset metadata
         con.execute(
             "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
-            (str(start_block - 1),)  # Set to block before start
+            (str(start_block - 1),),  # Set to block before start
         )
         con.commit()
 
@@ -341,6 +372,7 @@ class IndependentArchiver:
             batches_queued += 1
 
         print(f"Queued {batches_queued} batches for initial archive")
+
     def run(self, start_from_scratch: bool = False, start_block: Optional[int] = None):
         """Run the independent archiver.
         Args:
