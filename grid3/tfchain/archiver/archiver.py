@@ -36,6 +36,7 @@ class Archiver:
         db_timeout: int = 30,
         dict_size: int = 1024,
         training_blocks: int = 1000,
+        tfchain_url: Optional[str] = None,
     ):
         """Initialize the independent archiver.
 
@@ -55,6 +56,7 @@ class Archiver:
         self.db_timeout = db_timeout
         self.dict_size = dict_size
         self.training_blocks = training_blocks
+        self.tfchain_url = tfchain_url
         self.zstd_dict_bytes: Optional[bytes] = None
 
         # Initialize queues

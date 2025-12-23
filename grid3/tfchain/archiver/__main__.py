@@ -62,6 +62,11 @@ def main():
         type=int,
         default=1000,
     )
+    parser.add_argument(
+        "--tfchain-url",
+        help="TFChain WebSocket URL (e.g., wss://tfchain.grid.tf)",
+        type=str,
+    )
 
     args = parser.parse_args()
 
@@ -72,6 +77,7 @@ def main():
         max_workers=args.max_workers,
         check_interval=args.check_interval,
         training_blocks=args.training_blocks,
+        tfchain_url=args.tfchain_url,
     )
 
     # Run the archiver
