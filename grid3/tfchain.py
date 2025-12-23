@@ -5,6 +5,8 @@ import substrateinterface
 from substrateinterface.exceptions import SubstrateRequestException
 
 BLOCK_TIME_SECONDS = 6
+# Runtime versions larger than this support automatic type info retrieval
+AUTO_TYPES_CUTOFF = 100
 
 
 class TFChain:
@@ -17,7 +19,9 @@ class TFChain:
         # Load the type registry from package data. We don't add this to our
         # substrate client yet, because it doesn't have the ability to apply
         # different registries for different chain versions. We'll have to do
-        # that ourselves by wrapping the relevant functions.
+        # that ourselves by wrapping the relevant functions. For now it's just
+        # "get_block" and "get_events". Note that mixing the use of these with
+        # methods from the substrate client can cause unexpected behavior.
         with importlib.resources.open_text(__name__, "data/tfchain_types.json") as file:
             self.types = json.load(file)
 
@@ -28,6 +32,58 @@ class TFChain:
         )
 
         self.keys = None
+
+    def get_block(self, block_hash=None, block_number=None):
+        if block_hash and block_number:
+            raise ValueError("Either block_hash or block_number should be be set")
+
+        if block_number is not None:
+            block_hash = self.sub.get_block_hash(block_number)
+
+            if block_hash is None:
+                return
+
+        self.setup_runtime_types(block_hash)
+        return self.sub.get_block(block_hash)
+
+    def get_events(self, block_hash):
+        self.setup_runtime_types(block_hash)
+        return self.sub.get_events(block_hash)
+
+    def setup_runtime_types(self, block_hash):
+        runtime_info = self.sub.get_block_runtime_version(block_hash)
+        runtime_version = runtime_info["specVersion"]
+        if (
+            runtime_version > AUTO_TYPES_CUTOFF
+            or self.sub.runtime_version == runtime_version
+        ):
+            return
+        # Build a single dict with the most up-to-date types for the given runtime_version
+        merged_types = {}
+
+        # Iterate through the type definitions in our JSON
+        types_sets = self.types["spec"]["substrate-threefold"]["types"]
+        for types in types_sets:
+            # Each spec has minmax and types
+            spec_minmax = types.get("minmax", [])
+            spec_types = types.get("types", {})
+
+            min_version, max_version = spec_minmax
+            # max_version can be null, indicating no upper bound
+            if min_version <= runtime_version and (
+                max_version is None or runtime_version <= max_version
+            ):
+                # Merge these types into our combined dict
+                merged_types.update(spec_types)
+
+        # For some reason, we'll also get hits to try to decode types with a
+        # "type::" prefix. Rather than think too deeply about this, we just
+        # insert them into the map
+        for type_name, type_def in list(merged_types.items()):
+            prefixed_key = f"types::{type_name}"
+            merged_types[prefixed_key] = type_def
+
+        self.sub.type_registry = {"types": merged_types}
 
     def create_keypair(self, mnemonic):
         """
