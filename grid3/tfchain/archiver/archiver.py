@@ -494,7 +494,7 @@ class Archiver:
             The started Process object
         """
         # Pass dictionary bytes instead of the object for pickle compatibility
-        dict_bytes = self.zstd_dict.dict_content if self.zstd_dict else None
+        dict_bytes = self.zstd_dict_bytes
         proc = Process(target=self.archive_batch_worker, args=(dict_bytes,))
         proc.daemon = True
         proc.start()
