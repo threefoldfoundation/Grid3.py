@@ -21,7 +21,7 @@ import time
 from multiprocessing import JoinableQueue, Process
 from typing import Dict, List, Optional, Tuple
 
-import zstd
+from compression import zstd
 
 from .. import tfchain
 
@@ -52,7 +52,7 @@ class Archiver:
         self.check_interval = check_interval
         self.db_timeout = db_timeout
         self.dict_size = dict_size
-        self.zstd_dict = None
+        self.zstd_dict: Optional[zstd.ZstdDict] = None
 
         # Initialize queues
         self.block_queue = JoinableQueue()
@@ -162,8 +162,11 @@ class Archiver:
         """
         # Serialize blocks to JSON
         serialized = json.dumps(blocks, default=self._serialize_default).encode()
-        # Compress with zstd
-        compressed = zstd.compress(serialized)
+        # Compress with zstd, using dictionary if available
+        if self.zstd_dict is not None:
+            compressed = zstd.compress(serialized, zstd_dict=self.zstd_dict)
+        else:
+            compressed = zstd.compress(serialized)
         return compressed
 
     def decompress_block_batch(self, compressed_data: bytes) -> List[Dict]:
@@ -175,8 +178,11 @@ class Archiver:
         Returns:
             List of decompressed block dictionaries
         """
-        # Decompress with zstd
-        decompressed = zstd.decompress(compressed_data)
+        # Decompress with zstd, using dictionary if available
+        if self.zstd_dict:
+            decompressed = zstd.decompress(compressed_data, zstd_dict=self.zstd_dict)
+        else:
+            decompressed = zstd.decompress(compressed_data)
         # Deserialize JSON
         blocks = json.loads(decompressed.decode())
         return blocks
@@ -192,7 +198,7 @@ class Archiver:
 
     def train_compression_dict(
         self, sample_blocks: List[Dict], dict_size: Optional[int] = None
-    ) -> bytes:
+    ) -> zstd.ZstdDict:
         """Train a zstd compression dictionary from sample blocks.
 
         Args:
@@ -219,33 +225,31 @@ class Archiver:
         if not training_data:
             raise ValueError("No valid training data available")
 
-        # Note: The standard zstd Python module doesn't support dictionary training
-        # For now, we'll use a simple approach and just return None
-        # In a production environment, you would need zstd with dictionary support
-        print(
-            "Warning: Dictionary training not supported with this zstd implementation"
-        )
-        return b""  # Return empty bytes as placeholder
+        # Train the zstd dictionary
+        zstd_dict = zstd.train_dict(training_data, dict_size)
+        print(f"Trained zstd dictionary with size {len(zstd_dict)} bytes")
+        return zstd_dict
 
-    def load_dict_from_db(self, con: sqlite3.Connection) -> bool:
+    def load_dict_from_db(self, con: sqlite3.Connection) -> Optional[int]:
         """Load compression dictionary from database.
 
         Args:
             con: SQLite connection
 
         Returns:
-            True if dictionary was loaded, False if not found
+            Dictionary bytes if found, None if not found
         """
         try:
             cursor = con.execute("SELECT value FROM kv WHERE key='zstd_dict'")
             result = cursor.fetchone()
             if result:
-                self.zstd_dict = result[0]
-                return True
-            return False
+                self.zstd_dict = zstd.ZstdDict(result[0])
+                return len(result[0])
+            else:
+                return None
         except Exception as e:
             print(f"Error loading dictionary from DB: {e}")
-            return False
+            return None
 
     def save_dict_to_db(self, con: sqlite3.Connection, zstd_dict: bytes):
         """Save compression dictionary to database.
@@ -580,6 +584,17 @@ class Archiver:
 
         # Initialize TFChain client
         client = tfchain.TFChain()
+
+        # Load or train compression dictionary
+        length = self.load_dict_from_db(con)
+        if length is None:
+            print("No compression dictionary found in database, training new one...")
+            sample_blocks = self.sample_random_blocks(client, count=1000)
+            self.zstd_dict = self.train_compression_dict(sample_blocks, self.dict_size)
+            self.save_dict_to_db(con, self.zstd_dict.dict_content)
+            print("Compression dictionary saved to database")
+        else:
+            print(f"Loaded compression dictionary from database ({length} bytes)")
 
         # Start from scratch if requested
         if start_from_scratch:
