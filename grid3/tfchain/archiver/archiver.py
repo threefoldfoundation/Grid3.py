@@ -314,7 +314,7 @@ class Archiver:
 
     def get_block_data(
         self, client: tfchain.TFChain, block_number: int
-    ) -> Tuple[Dict, Dict, int]:
+    ) -> Tuple[Dict, int]:
         """Get block data including events and spec version.
 
         Args:
@@ -335,7 +335,8 @@ class Archiver:
             raise ValueError(
                 f"Invalid runtime version type: {type(client.sub.runtime_version)}"
             )
-        return block, dict(events), spec_version
+        block["events"] = events
+        return block, spec_version
 
     def fetch_block_range(
         self, client: tfchain.TFChain, start_block: int, end_block: int
@@ -353,15 +354,15 @@ class Archiver:
         blocks_data = []
         for block_number in range(start_block, end_block + 1):
             try:
-                block, events, spec_version = self.get_block_data(client, block_number)
-                blocks_data.append((block_number, block, events, spec_version))
+                block, spec_version = self.get_block_data(client, block_number)
+                blocks_data.append((block_number, block, spec_version))
             except Exception as e:
                 print(f"Warning: Could not fetch block {block_number}: {e}")
                 continue
         return blocks_data
 
     def process_block_batch(
-        self, blocks_data: List[Tuple[int, Dict, Dict, int]]
+        self, blocks_data: List[Tuple[int, Dict, int]]
     ) -> Optional[Dict]:
         """Process a batch of blocks for archiving.
 
@@ -378,11 +379,10 @@ class Archiver:
         blocks = []
         start_block = blocks_data[0][0]
         end_block = blocks_data[-1][0]
-        spec_version = blocks_data[0][
-            3
-        ]  # All blocks in batch should have same spec version
+        # All blocks in batch should have same spec version
+        spec_version = blocks_data[0][2]
 
-        for block_number, block, events, _ in blocks_data:
+        for block_number, block, _ in blocks_data:
             # Add events to block for complete archive
             block_with_events = block.copy()
             block_with_events["events"] = events
@@ -662,7 +662,9 @@ class Archiver:
                 # Spawn replacement workers if any died
                 while len(worker_processes) < self.max_workers:
                     worker_processes.append(self._spawn_worker())
-                    print(f"Started replacement worker (total: {len(worker_processes)})")
+                    print(
+                        f"Started replacement worker (total: {len(worker_processes)})"
+                    )
 
                 # Print status
                 queue_size = self.block_queue.qsize()
