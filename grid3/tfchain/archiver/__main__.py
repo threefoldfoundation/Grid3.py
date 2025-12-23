@@ -48,12 +48,12 @@ def main():
     parser.add_argument(
         "-s",
         "--start-from-scratch",
-        help="Start archiving from scratch (block 0)",
+        help="Reset archive and start fresh from the specified block (or block 0 if not specified)",
         action="store_true",
     )
     parser.add_argument(
         "--start-block",
-        help="Specific block to start from when using --start-from-scratch",
+        help="Block number to start archiving from (requires --start-from-scratch)",
         type=int,
     )
 
