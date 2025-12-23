@@ -311,9 +311,7 @@ class Archiver:
         print(f"Finished sampling: {len(sampled_blocks)} blocks")
         return sampled_blocks
 
-    def get_block_data(
-        self, client: tfchain.TFChain, block_number: int
-    ) -> Dict:
+    def get_block_data(self, client: tfchain.TFChain, block_number: int) -> Dict:
         """Get block data including events and spec version.
 
         Args:
@@ -375,14 +373,10 @@ class Archiver:
         if not blocks_data:
             return None
 
-        # Extract blocks and prepare for compression
-        blocks = []
         start_block = blocks_data[0][0]
         end_block = blocks_data[-1][0]
 
-        for block_number, block in blocks_data:
-            # Block already has events and spec_version included
-            blocks.append(block)
+        blocks = [block for _, block in blocks_data]
 
         # Compress the batch
         compressed_data = self.compress_block_batch(blocks)
