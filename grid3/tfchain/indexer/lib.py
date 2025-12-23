@@ -6,7 +6,6 @@ from threading import Thread
 import substrateinterface
 
 from .. import tfchain
-from .archiver import Archiver
 
 
 class Indexer:
@@ -19,7 +18,6 @@ class Indexer:
         sleep_time,
         post_period,
         retries,
-        archive_mode=False,
     ):
         self.file = file
         self.db_timeout = db_timeout
@@ -28,17 +26,12 @@ class Indexer:
         self.sleep_time = sleep_time
         self.post_period = post_period
         self.retries = retries
-        self.archive_mode = archive_mode
-        self.archive_compressor = None
 
         # Initialize queues
         self.block_queue = JoinableQueue()
         self.block_queue.cancel_join_thread()
         self.write_queue = JoinableQueue()
         self.write_queue.cancel_join_thread()
-
-        if archive_mode:
-            self.archive_compressor = Archiver(file)
 
     def load_queue(self, con, start_number, end_number):
         missing_blocks = self.find_missing(con, start_number, end_number)
@@ -75,11 +68,7 @@ class Indexer:
                 return
 
             try:
-                if job[0] == "archive_batch":
-                    # Handle archive batch storage
-                    self._write_archive_batch(con, job[1])
-                else:
-                    # Handle regular block processing
+                with con:
                     block_number, updates, spec_version = job
                     for update in updates:
                         con.execute(*update)
@@ -92,36 +81,6 @@ class Indexer:
                 print("While processing job:", job)
             finally:
                 self.write_queue.task_done()
-
-    def _write_archive_batch(self, con, batch_data):
-        """Write an archive batch to the database."""
-        try:
-            # Calculate batch ID (could be start_block or a separate counter)
-            batch_id = batch_data["start_block"] // 10  # Simple batch ID calculation
-
-            # Store the compressed batch
-            con.execute(
-                """
-                INSERT OR REPLACE INTO archive_blocks
-                (batch_id, start_block, end_block, compressed_data, spec_version)
-                VALUES (?, ?, ?, ?, ?)
-            """,
-                (
-                    batch_id,
-                    batch_data["start_block"],
-                    batch_data["end_block"],
-                    batch_data["compressed_data"],
-                    batch_data["spec_version"],
-                ),
-            )
-
-            print(
-                f"Stored archive batch {batch_id}: blocks {batch_data['start_block']}-{batch_data['end_block']}"
-            )
-
-        except Exception as e:
-            print(f"Error writing archive batch: {e}")
-            raise
 
     def fetch_powers(self, block_number):
         # To emulating minting properly, we need to know the power state and target of each node at the beginning of the minting period
@@ -598,52 +557,10 @@ class Indexer:
 
         return updates
 
-    def process_block_batch_for_archive(self, blocks_data):
-        """Process a batch of blocks for archive mode.
-
-        Args:
-            blocks_data: List of tuples (block_number, block, events, spec_version)
-
-        Returns:
-            Tuple of (batch_data, spec_version) for storage
-        """
-        if not self.archive_mode or self.archive_compressor is None:
-            raise ValueError("Archive mode not enabled")
-
-        # Extract blocks and prepare for compression
-        blocks = []
-        start_block = blocks_data[0][0]
-        end_block = blocks_data[-1][0]
-        spec_version = blocks_data[0][
-            3
-        ]  # All blocks in batch should have same spec version
-
-        for block_number, block, events, _ in blocks_data:
-            # Add events to block for complete archive
-            block_with_events = block.copy()
-            block_with_events["events"] = events
-            blocks.append(block_with_events)
-
-        # Compress the batch
-        compressed_data = self.archive_compressor.compress_block_batch(blocks)
-
-        return {
-            "start_block": start_block,
-            "end_block": end_block,
-            "compressed_data": compressed_data,
-            "spec_version": spec_version,
-            "blocks": blocks,  # Keep original for potential re-processing
-        }
-
     def processor(self):
         # Each processor has its own TF Chain and db connections
         con = self.new_connection()
         client = tfchain.TFChain()
-
-        # For archive mode, we need to collect blocks in batches
-        if self.archive_mode:
-            return self.archive_processor(con, client)
-
         while 1:
             block_number = self.block_queue.get()
             if block_number < 0:
@@ -665,61 +582,6 @@ class Indexer:
             finally:
                 # This allows us to join() the queue later to determine when all queued blocks have been attempted, even if processing failed
                 self.block_queue.task_done()
-
-    def archive_processor(self, con, client):
-        """Processor for archive mode that handles blocks in batches of 10."""
-        batch = []
-        batch_size = 10
-
-        while 1:
-            block_number = self.block_queue.get()
-            if block_number < 0:
-                # Process any remaining blocks in the batch before exiting
-                if batch:
-                    self._process_archive_batch(con, batch)
-                self.block_queue.task_done()
-                return
-
-            exists = con.execute(
-                "SELECT 1 FROM processed_blocks WHERE block_number=?", [block_number]
-            ).fetchone()
-
-            try:
-                if exists is None:
-                    block, events, spec_version = self.get_block_data(
-                        client, block_number
-                    )
-                    batch.append((block_number, block, events, spec_version))
-
-                    # Process batch when we have 10 blocks
-                    if len(batch) >= batch_size:
-                        self._process_archive_batch(con, batch)
-                        batch = []
-
-            finally:
-                # This allows us to join() the queue later to determine when all queued blocks have been attempted, even if processing failed
-                self.block_queue.task_done()
-
-    def _process_archive_batch(self, con, batch):
-        """Process a batch of blocks for archive storage."""
-        try:
-            # Process the batch for archive
-            batch_data = self.process_block_batch_for_archive(batch)
-
-            # Also process individual blocks for regular indexing (if needed)
-            # This maintains compatibility with existing functionality
-            for block_number, block, events, spec_version in batch:
-                updates = self.process_block(block, events)
-                self.write_queue.put((block_number, updates, spec_version))
-
-            # Store the compressed batch
-            self.write_queue.put(("archive_batch", batch_data))
-
-        except Exception as e:
-            print(f"Error processing archive batch: {e}")
-            # Re-queue individual blocks for regular processing
-            for block_number, _, _, _ in batch:
-                self.block_queue.put(block_number)
 
     def parallelize(self, con, start_number, end_number):
         self.load_queue(con, start_number, end_number)

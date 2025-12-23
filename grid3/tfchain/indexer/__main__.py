@@ -12,7 +12,6 @@ from websocket._exceptions import (
 
 from .. import tfchain
 from ..minting.period import Period
-from .archiver import Archiver
 from .lib import Indexer
 
 MIN_WORKERS = 2
@@ -59,11 +58,6 @@ if __name__ == "__main__":
         type=int,
         default=50,
     )
-    parser.add_argument(
-        "--archive",
-        help="Enable archive mode: store blocks as compressed JSON in batches of 10",
-        action="store_true",
-    )
 
     args = parser.parse_args()
 
@@ -78,37 +72,14 @@ if __name__ == "__main__":
         sleep_time=SLEEP_TIME,
         post_period=POST_PERIOD,
         retries=RETRIES,
-        archive_mode=args.archive,
     )
-
-    # Initialize archive compressor if archive mode is enabled
-    archiver = None
-    if args.archive:
-        print("Archive mode enabled")
-        archiver = Archiver(args.file)
 
     # Prep database and grab already processed blocks
     con = indexer.new_connection()
     indexer.prep_db(con)
 
-    # Prepare archive database if in archive mode
-    if args.archive:
-        archiver.prepare_db_for_archive(con)
-        # Try to load existing compression dictionary
-        if not archiver.load_dict_from_db(con):
-            print("No existing compression dictionary found, will train a new one")
-
     # Start tfchain client
     client = tfchain.TFChain()
-
-    # Train compression dictionary if needed (archive mode only)
-    if args.archive and archiver.zstd_dict is None:
-        print("Training compression dictionary with 1000 random blocks...")
-        sample_blocks = archiver.sample_random_blocks(client, count=1000)
-        zstd_dict = archiver.train_compression_dict(sample_blocks)
-        archiver.zstd_dict = zstd_dict
-        archiver.save_dict_to_db(con, zstd_dict)
-        print("Compression dictionary trained and saved")
 
     if args.start_block is not None:
         start_number = args.start_block
