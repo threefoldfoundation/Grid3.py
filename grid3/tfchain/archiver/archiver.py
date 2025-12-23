@@ -642,6 +642,14 @@ class Archiver:
                 # Clean up completed processes
                 worker_processes = [p for p in worker_processes if p.is_alive()]
 
+                # Spawn replacement workers if any died
+                while len(worker_processes) < self.max_workers:
+                    proc = Process(target=self.archive_batch_worker)
+                    proc.daemon = True
+                    proc.start()
+                    worker_processes.append(proc)
+                    print(f"Started replacement worker (total: {len(worker_processes)})")
+
                 # Print status
                 queue_size = self.block_queue.qsize()
                 write_queue_size = self.write_queue.qsize()
