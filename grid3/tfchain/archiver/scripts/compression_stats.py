@@ -5,6 +5,7 @@ It uses the existing Archiver class and methods for database access and decompre
 """
 
 import argparse
+import json
 
 from grid3.tfchain.archiver import Archiver
 
@@ -42,7 +43,7 @@ def calculate_compression_stats(archiver: Archiver) -> dict:
 
         # Decompress to get uncompressed size
         blocks = archiver.decompress_block_batch(compressed_data)
-        uncompressed_size = sum(len(block.encode()) for block in blocks)
+        uncompressed_size = sum(len(json.dumps(block, default=archiver._serialize_default).encode()) for block in blocks)
         total_uncompressed_size += uncompressed_size
 
         block_count = len(blocks)
