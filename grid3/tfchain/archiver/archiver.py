@@ -82,7 +82,6 @@ class Archiver:
             start_block INTEGER NOT NULL,
             end_block INTEGER NOT NULL,
             compressed_data BLOB NOT NULL,
-            spec_version INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(start_block, end_block)
         )
@@ -314,7 +313,7 @@ class Archiver:
 
     def get_block_data(
         self, client: tfchain.TFChain, block_number: int
-    ) -> Tuple[Dict, int]:
+    ) -> Dict:
         """Get block data including events and spec version.
 
         Args:
@@ -322,7 +321,7 @@ class Archiver:
             block_number: Block number to fetch
 
         Returns:
-            Tuple of (block, events, spec_version)
+            Block dictionary with events and spec_version included
         """
         block = client.get_block(block_number=block_number)
         if block is None:
@@ -336,11 +335,12 @@ class Archiver:
                 f"Invalid runtime version type: {type(client.sub.runtime_version)}"
             )
         block["events"] = events
-        return block, spec_version
+        block["spec_version"] = spec_version
+        return block
 
     def fetch_block_range(
         self, client: tfchain.TFChain, start_block: int, end_block: int
-    ) -> List[Tuple[int, Dict, Dict, int]]:
+    ) -> List[Tuple[int, Dict]]:
         """Fetch a range of blocks with their data.
 
         Args:
@@ -349,25 +349,25 @@ class Archiver:
             end_block: Ending block number
 
         Returns:
-            List of tuples (block_number, block, events, spec_version)
+            List of tuples (block_number, block)
         """
         blocks_data = []
         for block_number in range(start_block, end_block + 1):
             try:
-                block, spec_version = self.get_block_data(client, block_number)
-                blocks_data.append((block_number, block, spec_version))
+                block = self.get_block_data(client, block_number)
+                blocks_data.append((block_number, block))
             except Exception as e:
                 print(f"Warning: Could not fetch block {block_number}: {e}")
                 continue
         return blocks_data
 
     def process_block_batch(
-        self, blocks_data: List[Tuple[int, Dict, int]]
+        self, blocks_data: List[Tuple[int, Dict]]
     ) -> Optional[Dict]:
         """Process a batch of blocks for archiving.
 
         Args:
-            blocks_data: List of tuples (block_number, block, events, spec_version)
+            blocks_data: List of tuples (block_number, block)
 
         Returns:
             Dictionary containing batch data for storage
@@ -379,14 +379,10 @@ class Archiver:
         blocks = []
         start_block = blocks_data[0][0]
         end_block = blocks_data[-1][0]
-        # All blocks in batch should have same spec version
-        spec_version = blocks_data[0][2]
 
-        for block_number, block, _ in blocks_data:
-            # Add events to block for complete archive
-            block_with_events = block.copy()
-            block_with_events["events"] = events
-            blocks.append(block_with_events)
+        for block_number, block in blocks_data:
+            # Block already has events and spec_version included
+            blocks.append(block)
 
         # Compress the batch
         compressed_data = self.compress_block_batch(blocks)
@@ -396,7 +392,6 @@ class Archiver:
             "start_block": start_block,
             "end_block": end_block,
             "compressed_data": compressed_data,
-            "spec_version": spec_version,
             "block_count": len(blocks),
         }
 
@@ -459,15 +454,14 @@ class Archiver:
                     con.execute(
                         """
                         INSERT OR REPLACE INTO archive_blocks
-                        (batch_id, start_block, end_block, compressed_data, spec_version)
-                        VALUES (?, ?, ?, ?, ?)
+                        (batch_id, start_block, end_block, compressed_data)
+                        VALUES (?, ?, ?, ?)
                         """,
                         (
                             batch_data["batch_id"],
                             batch_data["start_block"],
                             batch_data["end_block"],
                             batch_data["compressed_data"],
-                            batch_data["spec_version"],
                         ),
                     )
 
