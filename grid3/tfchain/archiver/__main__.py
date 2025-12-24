@@ -67,6 +67,12 @@ def main():
         help="TFChain WebSocket URL (e.g., wss://tfchain.grid.tf)",
         type=str,
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        help="Enable verbose batch-level logging",
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
@@ -78,6 +84,7 @@ def main():
         check_interval=args.check_interval,
         training_blocks=args.training_blocks,
         tfchain_url=args.tfchain_url,
+        verbose=args.verbose,
     )
 
     # Run the archiver

@@ -37,6 +37,7 @@ class Archiver:
         dict_size: int = 1024,
         training_blocks: int = 1000,
         tfchain_url: str = "wss://tfchain.grid.tf",
+        verbose: bool = False,
     ):
         """Initialize the independent archiver.
 
@@ -58,6 +59,8 @@ class Archiver:
         self.dict_size = dict_size
         self.training_blocks = training_blocks
         self.tfchain_url = tfchain_url
+        self.verbose = verbose
+        self.start_time = time.time()
 
         # Initialize queues
         self.block_queue = JoinableQueue()
@@ -466,7 +469,8 @@ class Archiver:
             start_block, end_block = batch_range
 
             try:
-                print(f"Processing batch: blocks {start_block}-{end_block}")
+                if self.verbose:
+                    print(f"Processing batch: blocks {start_block}-{end_block}")
 
                 # Fetch the block range
                 blocks_data = self.fetch_block_range(client, start_block, end_block)
@@ -520,11 +524,12 @@ class Archiver:
                     # Update metadata
                     self.update_last_archived_block(con, batch_data["end_block"])
 
-                    print(
-                        f"Archived batch {batch_data['batch_id']}: "
-                        f"blocks {batch_data['start_block']}-{batch_data['end_block']} "
-                        f"({batch_data['block_count']} blocks)"
-                    )
+                    if self.verbose:
+                        print(
+                            f"Archived batch {batch_data['batch_id']}: "
+                            f"blocks {batch_data['start_block']}-{batch_data['end_block']} "
+                            f"({batch_data['block_count']} blocks)"
+                        )
 
             except Exception as e:
                 print(f"Error writing to database: {e}")
@@ -600,7 +605,8 @@ class Archiver:
             self.block_queue.put((batch_start, batch_end))
             queued_batches += 1
 
-        print(f"Queued {queued_batches} batches for processing")
+        if self.verbose:
+            print(f"Queued {queued_batches} batches for processing")
         return queued_batches
 
     def archive_from_scratch(self, client: tfchain.TFChain, start_block: int = 0):
@@ -632,7 +638,8 @@ class Archiver:
             self.block_queue.put((batch_start, batch_end))
             batches_queued += 1
 
-        print(f"Queued {batches_queued} batches for initial archive")
+        if self.verbose:
+            print(f"Queued {batches_queued} batches for initial archive")
 
     def run(self, start_from_scratch: bool = False, start_block: Optional[int] = None):
         """Run the independent archiver.
@@ -714,13 +721,27 @@ class Archiver:
                 current_height = self.get_current_block_height(client)
                 last_archived = self.get_last_archived_block(con)
 
+                # Calculate ETA
+                remaining_blocks = current_height - last_archived
+                elapsed_time = time.time() - self.start_time
+                if last_archived > 0 and elapsed_time > 0:
+                    blocks_per_second = last_archived / elapsed_time
+                    if blocks_per_second > 0:
+                        eta_seconds = remaining_blocks / blocks_per_second
+                        eta_str = str(datetime.timedelta(seconds=int(eta_seconds)))
+                    else:
+                        eta_str = "calculating..."
+                else:
+                    eta_str = "calculating..."
+
                 print(
                     f"{datetime.datetime.now()} | "
                     f"Queue: {queue_size} | "
                     f"Write Q: {write_queue_size} | "
                     f"Workers: {len(worker_processes)} | "
                     f"Height: {current_height} | "
-                    f"Archived: {last_archived}"
+                    f"Archived: {last_archived} | "
+                    f"ETA: {eta_str}"
                 )
 
                 # If queue is empty and we're caught up, just wait
