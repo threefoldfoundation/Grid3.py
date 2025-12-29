@@ -553,12 +553,6 @@ class Archiver:
                         print(
                             f"Recreating TFChain client for batch {start_block}-{end_block}"
                         )
-                        # Close old client if possible
-                        try:
-                            if hasattr(client, "close"):
-                                client.close()
-                        except Exception:
-                            pass
                         client = None
                         # Wait a bit before retrying
                         time.sleep(1)
