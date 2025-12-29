@@ -16,7 +16,9 @@ Usage:
 import datetime
 import json
 import random
+import queue as queue_module
 import sqlite3
+import threading
 import time
 from multiprocessing import JoinableQueue, Process
 from typing import Dict, List, Optional, Tuple
@@ -63,8 +65,9 @@ class Archiver:
         self.start_time = time.time()
 
         # Initialize queues
-        self.block_queue = JoinableQueue()
-        self.block_queue.cancel_join_thread()
+        # block_queue: Queue for workers (threads in same process)
+        self.block_queue = queue_module.Queue()
+        # write_queue: Queue for writer process (inter-process)
         self.write_queue = JoinableQueue()
         self.write_queue.cancel_join_thread()
 
@@ -451,54 +454,105 @@ class Archiver:
         }
 
     def archive_batch_worker(self, dict_bytes):
-        """Worker process that processes block batches for archiving."""
+        """Worker thread that processes block batches for archiving."""
         # Reconstruct the zstd dictionary from bytes
         if dict_bytes:
             self.zstd_dict = zstd.ZstdDict(dict_bytes)
         else:
             self.zstd_dict = None
 
-        client = tfchain.TFChain()
+        client = None
+        max_retries = 3
 
         while self.running:
             batch_range = self.block_queue.get()
             if batch_range is None:
-                self.block_queue.task_done()
                 return
 
             start_block, end_block = batch_range
 
-            try:
-                if self.verbose:
-                    print(f"Processing batch: blocks {start_block}-{end_block}")
+            for attempt in range(max_retries):
+                try:
+                    if self.verbose:
+                        print(f"Processing batch: blocks {start_block}-{end_block}")
 
-                # Fetch the block range
-                blocks_data = self.fetch_block_range(client, start_block, end_block)
+                    # Ensure we have a client
+                    if client is None:
+                        client = tfchain.TFChain()
 
-                if blocks_data:
-                    # Process the batch
-                    batch_data = self.process_block_batch(blocks_data)
+                    # Fetch the block range
+                    blocks_data = self.fetch_block_range(client, start_block, end_block)
 
-                    if batch_data:
-                        # Store the compressed batch
-                        self.write_queue.put(("archive_batch", batch_data))
-                        # Update last archived block
-                        self.last_archived_block = batch_data["end_block"]
+                    if blocks_data:
+                        # Process the batch
+                        batch_data = self.process_block_batch(blocks_data)
 
-            except Exception as e:
-                print(f"Error processing batch {start_block}-{end_block}: {e}")
-                # Re-queue the batch for retry
-                self.block_queue.put(batch_range)
+                        if batch_data:
+                            # Store the compressed batch
+                            self.write_queue.put(("archive_batch", batch_data))
+                            # Update last archived block
+                            self.last_archived_block = batch_data["end_block"]
 
-            finally:
-                self.block_queue.task_done()
+                    # Success - break retry loop
+                    break
 
-    def db_writer(self):
-        """Database writer process that handles writing archive batches."""
-        con = self.new_connection()
+                except Exception as e:
+                    error_msg = str(e)
 
-        while self.running:
-            job = self.write_queue.get()
+                    # Check for client state corruption errors
+                    is_client_error = (
+                        "Decoder class" in error_msg
+                        or "portable_registry" in error_msg
+                        or client is None
+                        or client.sub is None
+                    )
+
+                    if is_client_error and attempt < max_retries - 1:
+                        print(
+                            f"Client error detected (attempt {attempt + 1}/{max_retries}): {e}"
+                        )
+                        print(
+                            f"Recreating TFChain client for batch {start_block}-{end_block}"
+                        )
+                        # Close old client if possible
+                        try:
+                            if hasattr(client, "close"):
+                                client.close()
+                        except Exception:
+                            pass
+                        client = None
+                        # Wait a bit before retrying
+                        time.sleep(1)
+                    else:
+                        # Other error or last retry failed
+                        print(f"Error processing batch {start_block}-{end_block}: {e}")
+                        # Re-queue the batch for retry
+                        self.block_queue.put(batch_range)
+                        break
+
+    @staticmethod
+    def db_writer(write_queue, db_path, db_timeout, verbose):
+        """Database writer process that handles writing archive batches.
+
+        Args:
+            write_queue: Queue for receiving write jobs
+            db_path: Path to the database file
+            db_timeout: SQLite connection timeout
+            verbose: Whether to print verbose output
+        """
+        con = sqlite3.connect(db_path, timeout=db_timeout)
+        con.execute("PRAGMA journal_mode=wal")
+
+        def update_last_archived_block(con, block_number):
+            """Update the last archived block number in metadata."""
+            con.execute(
+                "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
+                (str(block_number),),
+            )
+            con.commit()
+
+        while True:
+            job = write_queue.get()
             if job is None:
                 return
 
@@ -522,9 +576,9 @@ class Archiver:
                     )
 
                     # Update metadata
-                    self.update_last_archived_block(con, batch_data["end_block"])
+                    update_last_archived_block(con, batch_data["end_block"])
 
-                    if self.verbose:
+                    if verbose:
                         print(
                             f"Archived batch {batch_data['batch_id']}: "
                             f"blocks {batch_data['start_block']}-{batch_data['end_block']} "
@@ -536,20 +590,20 @@ class Archiver:
                 print(f"Failed job: {job}")
 
             finally:
-                self.write_queue.task_done()
+                write_queue.task_done()
 
-    def _spawn_worker(self) -> Process:
-        """Create and start a new worker process.
+    def _spawn_worker(self) -> threading.Thread:
+        """Create and start a new worker thread.
 
         Returns:
-            The started Process object
+            The started Thread object
         """
-        # Pass dictionary bytes instead of the object for pickle compatibility
+        # Pass dictionary bytes instead of the object
         dict_bytes = self.zstd_dict_bytes
-        proc = Process(target=self.archive_batch_worker, args=(dict_bytes,))
-        proc.daemon = True
-        proc.start()
-        return proc
+        thread = threading.Thread(target=self.archive_batch_worker, args=(dict_bytes,))
+        thread.daemon = True
+        thread.start()
+        return thread
 
     def get_current_block_height(self, client: tfchain.TFChain) -> int:
         """Get the current block height from the chain.
@@ -686,17 +740,20 @@ class Archiver:
             # Queue any existing blocks that need archiving
             self.queue_new_batches(con, client)
 
-        # Start worker processes
-        worker_processes = [self._spawn_worker() for _ in range(self.max_workers)]
+        # Start worker threads
+        worker_threads = [self._spawn_worker() for _ in range(self.max_workers)]
 
         # Start database writer process
-        writer_proc = Process(target=self.db_writer)
+        writer_proc = Process(
+            target=self.db_writer,
+            args=(self.write_queue, self.db_path, self.db_timeout, self.verbose),
+        )
         writer_proc.daemon = True
         writer_proc.start()
 
         last_archived_at_start = self.get_last_archived_block(con)
 
-        print(f"Started {len(worker_processes)} worker processes")
+        print(f"Started {len(worker_threads)} worker threads")
         print("Archiver running...")
 
         try:
@@ -707,15 +764,13 @@ class Archiver:
                 # Queue new batches if available
                 self.queue_new_batches(con, client)
 
-                # Clean up completed processes
-                worker_processes = [p for p in worker_processes if p.is_alive()]
+                # Clean up completed threads
+                worker_threads = [t for t in worker_threads if t.is_alive()]
 
                 # Spawn replacement workers if any died
-                while len(worker_processes) < self.max_workers:
-                    worker_processes.append(self._spawn_worker())
-                    print(
-                        f"Started replacement worker (total: {len(worker_processes)})"
-                    )
+                while len(worker_threads) < self.max_workers:
+                    worker_threads.append(self._spawn_worker())
+                    print(f"Started replacement worker (total: {len(worker_threads)})")
 
                 # Print status
                 queue_size = self.block_queue.qsize()
@@ -742,7 +797,7 @@ class Archiver:
                     f"{datetime.datetime.now()} | "
                     f"Queue: {queue_size} | "
                     f"Write Q: {write_queue_size} | "
-                    f"Workers: {len(worker_processes)} | "
+                    f"Workers: {len(worker_threads)} | "
                     f"Height: {current_height} | "
                     f"Archived: {last_archived} | "
                     f"ETA: {eta_str}"
@@ -757,11 +812,11 @@ class Archiver:
             self.running = False
 
             # Signal workers to exit
-            for _ in range(len(worker_processes)):
+            for _ in range(len(worker_threads)):
                 self.block_queue.put(None)
             self.write_queue.put(None)
 
-            # Wait for processes to finish
-            for proc in worker_processes:
-                proc.join(timeout=30)
+            # Wait for threads to finish
+            for thread in worker_threads:
+                thread.join(timeout=30)
             writer_proc.join(timeout=30)
