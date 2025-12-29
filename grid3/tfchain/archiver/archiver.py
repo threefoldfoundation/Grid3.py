@@ -414,14 +414,34 @@ class Archiver:
             List of tuples (block_number, block)
         """
         blocks_data = []
-        for block_number in range(start_block, end_block + 1):
-            try:
-                block = self.get_block_data(client, block_number)
-                blocks_data.append((block_number, block))
-            except Exception as e:
-                print(f"Warning: Could not fetch block {block_number}: {e}")
-                continue
-        return blocks_data
+        current_block = client.get_block(block_number=end_block)
+        if current_block is None:
+            raise ValueError(f"Block {end_block} not found")
+
+        while (
+            current_block is not None
+            and current_block["header"]["number"] >= start_block
+        ):
+            block_number = current_block["header"]["number"]
+            block_hash = current_block["header"]["hash"]
+            events = client.get_events(block_hash) or {}
+            if type(client.sub.runtime_version) is int:
+                spec_version = client.sub.runtime_version
+            else:
+                raise ValueError(
+                    f"Invalid runtime version type: {type(client.sub.runtime_version)}"
+                )
+            current_block["events"] = events
+            current_block["spec_version"] = spec_version
+            blocks_data.append((block_number, current_block))
+
+            if block_number == start_block:
+                break
+
+            parent_hash = current_block["header"]["parentHash"]
+            current_block = client.get_block(block_hash=parent_hash)
+
+        return list(reversed(blocks_data))
 
     def process_block_batch(
         self, blocks_data: List[Tuple[int, Dict]]
