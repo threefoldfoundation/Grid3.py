@@ -471,7 +471,7 @@ class Archiver:
             blocks_data: List of tuples (block_number, block)
 
         Returns:
-            Dictionary containing batch data for storage
+            Dictionary containing batch data for storage (serialized but uncompressed)
         """
         if not blocks_data:
             return None
@@ -481,14 +481,14 @@ class Archiver:
 
         blocks = [block for _, block in blocks_data]
 
-        # Compress the batch
-        compressed_data = self.compress_block_batch(blocks)
+        # Serialize blocks to JSON (picklable format)
+        serialized_blocks = json.dumps(blocks, default=self._serialize_default)
 
         return {
             "batch_id": start_block // self.batch_size,
             "start_block": start_block,
             "end_block": end_block,
-            "compressed_data": compressed_data,
+            "blocks": serialized_blocks,
             "block_count": len(blocks),
         }
 
@@ -566,7 +566,7 @@ class Archiver:
                         break
 
     @staticmethod
-    def db_writer(write_queue, db_path, db_timeout, verbose):
+    def db_writer(write_queue, db_path, db_timeout, verbose, dict_bytes):
         """Database writer process that handles writing archive batches.
 
         Args:
@@ -574,9 +574,16 @@ class Archiver:
             db_path: Path to the database file
             db_timeout: SQLite connection timeout
             verbose: Whether to print verbose output
+            dict_bytes: Zstd dictionary bytes for compression
         """
         con = sqlite3.connect(db_path, timeout=db_timeout)
         con.execute("PRAGMA journal_mode=wal")
+
+        # Reconstruct the zstd dictionary from bytes
+        if dict_bytes:
+            zstd_dict = zstd.ZstdDict(dict_bytes)
+        else:
+            zstd_dict = None
 
         def update_last_archived_block(con, block_number):
             """Update the last archived block number in metadata."""
@@ -586,6 +593,24 @@ class Archiver:
             )
             con.commit()
 
+        def compress_blocks(serialized_blocks: str) -> bytes:
+            """Compress a batch of blocks using zstd.
+
+            Args:
+                serialized_blocks: JSON string containing block data
+
+            Returns:
+                Compressed bytes
+            """
+            # Encode to bytes
+            serialized = serialized_blocks.encode()
+            # Compress with zstd, using dictionary if available
+            if zstd_dict is not None:
+                compressed = zstd.compress(serialized, zstd_dict=zstd_dict)
+            else:
+                compressed = zstd.compress(serialized)
+            return compressed
+
         while True:
             job = write_queue.get()
             if job is None:
@@ -594,6 +619,9 @@ class Archiver:
             try:
                 if job[0] == "archive_batch":
                     batch_data = job[1]
+
+                    # Compress the blocks
+                    compressed_data = compress_blocks(batch_data["blocks"])
 
                     # Store the compressed batch
                     con.execute(
@@ -606,7 +634,7 @@ class Archiver:
                             batch_data["batch_id"],
                             batch_data["start_block"],
                             batch_data["end_block"],
-                            batch_data["compressed_data"],
+                            compressed_data,
                         ),
                     )
 
@@ -781,7 +809,13 @@ class Archiver:
         # Start database writer process
         writer_proc = Process(
             target=self.db_writer,
-            args=(self.write_queue, self.db_path, self.db_timeout, self.verbose),
+            args=(
+                self.write_queue,
+                self.db_path,
+                self.db_timeout,
+                self.verbose,
+                self.zstd_dict_bytes,
+            ),
         )
         writer_proc.daemon = True
         writer_proc.start()
