@@ -23,7 +23,6 @@ import time
 from multiprocessing import JoinableQueue, Process
 from typing import Dict, List, Optional, Tuple
 
-import requests
 from compression import zstd
 
 from .. import tfchain
@@ -475,14 +474,8 @@ class Archiver:
             "block_count": len(blocks),
         }
 
-    def archive_batch_worker(self, dict_bytes):
+    def archive_batch_worker(self):
         """Worker thread that processes block batches for archiving."""
-        # Reconstruct the zstd dictionary from bytes
-        if dict_bytes:
-            self.zstd_dict = zstd.ZstdDict(dict_bytes)
-        else:
-            self.zstd_dict = None
-
         client = None
         max_retries = 3
 
@@ -642,9 +635,7 @@ class Archiver:
         Returns:
             The started Thread object
         """
-        # Pass dictionary bytes instead of the object
-        dict_bytes = self.zstd_dict_bytes
-        thread = threading.Thread(target=self.archive_batch_worker, args=(dict_bytes,))
+        thread = threading.Thread(target=self.archive_batch_worker)
         thread.daemon = True
         thread.start()
         return thread
