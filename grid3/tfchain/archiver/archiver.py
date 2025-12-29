@@ -84,23 +84,6 @@ class Archiver:
         # Try to load compression dictionary from database
         self.zstd_dict_bytes: Optional[bytes] = self.load_dict_from_db(con)
 
-        # Create shared HTTP session with connection pooling
-        from requests.adapters import HTTPAdapter
-
-        # Determine pool size based on max_workers
-        pool_size = min(max_workers, 100)
-
-        adapter = HTTPAdapter(
-            pool_connections=pool_size,
-            pool_maxsize=pool_size,
-            max_retries=3,
-            pool_block=False,
-        )
-
-        self.shared_session = requests.Session()
-        self.shared_session.mount("https://", adapter)
-        self.shared_session.mount("http://", adapter)
-
         # Close the connection as it will be reopened when needed
         con.close()
 
@@ -517,9 +500,7 @@ class Archiver:
 
                     # Ensure we have a client
                     if client is None:
-                        client = tfchain.TFChain(
-                            session=self.shared_session, use_http=True
-                        )
+                        client = tfchain.TFChain(use_http=True)
 
                     # Fetch the block range
                     blocks_data = self.fetch_block_range(client, start_block, end_block)
@@ -781,7 +762,7 @@ class Archiver:
             self.update_batch_size_in_metadata(con, self.batch_size)
 
         # Initialize TFChain client
-        client = tfchain.TFChain(session=self.shared_session, use_http=True)
+        client = tfchain.TFChain(use_http=True)
 
         # We attempt to load the dict during init, if None it wasn't found
         if self.zstd_dict_bytes is None:
