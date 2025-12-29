@@ -128,6 +128,15 @@ class Archiver:
         VALUES('last_archived_block', '0')
         """)
 
+        # Initialize total blocks processed in kv store if not exists
+        con.execute(
+            """
+        INSERT OR IGNORE INTO kv(key, value)
+        VALUES('total_blocks_processed', ?)
+        """,
+            (b"0",),
+        )
+
         # Store batch size as metadata
         con.execute(
             """
@@ -171,6 +180,68 @@ class Archiver:
             (str(block_number),),
         )
         con.commit()
+
+    def get_total_blocks_processed(self, con: sqlite3.Connection) -> int:
+        """Get the total number of blocks processed from kv store."""
+        result = con.execute(
+            "SELECT value FROM kv WHERE key='total_blocks_processed'"
+        ).fetchone()
+        return int(result[0]) if result and result[0] is not None else 0
+
+    def update_total_blocks_processed(self, con: sqlite3.Connection, block_count: int):
+        """Increment the total blocks processed count."""
+        con.execute(
+            "UPDATE kv SET value=value+? WHERE key='total_blocks_processed'",
+            (block_count,),
+        )
+        con.commit()
+
+    def find_missing_blocks(self, con: sqlite3.Connection) -> List[int]:
+        """Find missing blocks by comparing expected vs actual blocks.
+
+        Returns:
+            List of missing block numbers
+        """
+        highest_block = self.get_last_archived_block(con)
+        total_blocks = self.get_total_blocks_processed(con)
+
+        # If no discrepancy, return empty list
+        if total_blocks == highest_block:
+            return []
+
+        # Get all archived block ranges from the database
+        cursor = con.execute(
+            "SELECT start_block, end_block FROM archive_blocks ORDER BY start_block"
+        )
+
+        # Build a set of all archived block numbers
+        archived_blocks = set()
+        for start, end in cursor:
+            archived_blocks.update(range(start, end + 1))
+
+        # Find missing blocks in range 1 to highest_block
+        missing_blocks = []
+        for block_num in range(1, highest_block + 1):
+            if block_num not in archived_blocks:
+                missing_blocks.append(block_num)
+
+        return missing_blocks
+
+    def queue_missing_blocks(self, con: sqlite3.Connection):
+        """Find and queue missing blocks for processing."""
+        missing_blocks = self.find_missing_blocks(con)
+
+        if not missing_blocks:
+            print("No missing blocks detected")
+            return
+
+        print(f"Found {len(missing_blocks)} missing blocks: {missing_blocks[:10]}...")
+        if len(missing_blocks) > 10:
+            print(f"... and {len(missing_blocks) - 10} more")
+
+        # Queue missing blocks in batches
+        for block_num in missing_blocks:
+            self.block_queue.put((block_num, block_num))
 
     def compress_block_batch(self, blocks: List[Dict]) -> bytes:
         """Compress a batch of blocks using zstd.
@@ -567,6 +638,14 @@ class Archiver:
             )
             con.commit()
 
+        def update_total_blocks_processed(con, block_count: int):
+            """Increment the total blocks processed count."""
+            con.execute(
+                "UPDATE kv SET value=value+? WHERE key='total_blocks_processed'",
+                (block_count,),
+            )
+            con.commit()
+
         def compress_blocks(serialized_blocks: str) -> bytes:
             """Compress a batch of blocks using zstd.
 
@@ -614,6 +693,7 @@ class Archiver:
 
                     # Update metadata
                     update_last_archived_block(con, batch_data["end_block"])
+                    update_total_blocks_processed(con, batch_data["block_count"])
 
                     if verbose:
                         print(
@@ -746,6 +826,9 @@ class Archiver:
         # Initialize database
         con = self.new_connection()
 
+        # Check for missing blocks on startup
+        self.queue_missing_blocks(con)
+
         # Check if batch size has changed and update if needed
         stored_batch_size = self.get_batch_size_from_metadata(con)
         if stored_batch_size != self.batch_size:
@@ -841,6 +924,7 @@ class Archiver:
                     f"Workers: {len(worker_threads)} | "
                     f"Height: {current_height} | "
                     f"Archived: {last_archived} | "
+                    f"Total: {self.get_total_blocks_processed(con)} | "
                     f"ETA: {eta_str}"
                 )
 
