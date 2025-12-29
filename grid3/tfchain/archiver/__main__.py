@@ -64,18 +64,13 @@ def main():
     )
     parser.add_argument(
         "--tfchain-url",
-        help="TFChain WebSocket URL (e.g., wss://tfchain.grid.tf)",
+        help="TFChain URL (e.g., https://tfchain.grid.tf)",
         type=str,
     )
     parser.add_argument(
         "-v",
         "--verbose",
         help="Enable verbose batch-level logging",
-        action="store_true",
-    )
-    parser.add_argument(
-        "--use-http",
-        help="Use HTTP instead of WebSocket for RPC calls (better for many workers)",
         action="store_true",
     )
 
@@ -90,7 +85,6 @@ def main():
         training_blocks=args.training_blocks,
         tfchain_url=args.tfchain_url,
         verbose=args.verbose,
-        use_http=args.use_http,
     )
 
     # Run the archiver

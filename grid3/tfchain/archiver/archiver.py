@@ -15,8 +15,8 @@ Usage:
 
 import datetime
 import json
-import random
 import queue as queue_module
+import random
 import sqlite3
 import threading
 import time
@@ -41,7 +41,6 @@ class Archiver:
         training_blocks: int = 1000,
         tfchain_url: str = "wss://tfchain.grid.tf",
         verbose: bool = False,
-        use_http: bool = False,
     ):
         """Initialize the independent archiver.
 
@@ -55,7 +54,6 @@ class Archiver:
             training_blocks: Number of blocks to sample for dictionary training (default: 1000)
             tfchain_url: URL of the tfchain node to connect to (default: "wss://tfchain.grid.tf")
             verbose: Whether to print verbose output (default: False)
-            use_http: Use HTTP instead of WebSocket for RPC calls (default: False)
         """
         self.db_path = db_path
         self.batch_size = batch_size
@@ -66,7 +64,6 @@ class Archiver:
         self.training_blocks = training_blocks
         self.tfchain_url = tfchain_url
         self.verbose = verbose
-        self.use_http = use_http
         self.start_time = time.time()
 
         # Initialize queues
@@ -87,25 +84,22 @@ class Archiver:
         # Try to load compression dictionary from database
         self.zstd_dict_bytes: Optional[bytes] = self.load_dict_from_db(con)
 
-        # Create shared HTTP session with connection pooling if using HTTP
-        if self.use_http:
-            from requests.adapters import HTTPAdapter
+        # Create shared HTTP session with connection pooling
+        from requests.adapters import HTTPAdapter
 
-            # Determine pool size based on max_workers
-            pool_size = min(max_workers, 50)
+        # Determine pool size based on max_workers
+        pool_size = min(max_workers, 50)
 
-            adapter = HTTPAdapter(
-                pool_connections=pool_size,
-                pool_maxsize=pool_size,
-                max_retries=3,
-                pool_block=False,
-            )
+        adapter = HTTPAdapter(
+            pool_connections=pool_size,
+            pool_maxsize=pool_size,
+            max_retries=3,
+            pool_block=False,
+        )
 
-            self.shared_session = requests.Session()
-            self.shared_session.mount("https://", adapter)
-            self.shared_session.mount("http://", adapter)
-        else:
-            self.shared_session = None
+        self.shared_session = requests.Session()
+        self.shared_session.mount("https://", adapter)
+        self.shared_session.mount("http://", adapter)
 
         # Close the connection as it will be reopened when needed
         con.close()
@@ -523,9 +517,7 @@ class Archiver:
 
                     # Ensure we have a client
                     if client is None:
-                        client = tfchain.TFChain(
-                            session=self.shared_session, use_http=self.use_http
-                        )
+                        client = tfchain.TFChain(session=self.shared_session)
 
                     # Fetch the block range
                     blocks_data = self.fetch_block_range(client, start_block, end_block)
@@ -765,7 +757,7 @@ class Archiver:
             self.update_batch_size_in_metadata(con, self.batch_size)
 
         # Initialize TFChain client
-        client = tfchain.TFChain(session=self.shared_session, use_http=self.use_http)
+        client = tfchain.TFChain(session=self.shared_session)
 
         # We attempt to load the dict during init, if None it wasn't found
         if self.zstd_dict_bytes is None:
