@@ -88,7 +88,7 @@ class Archiver:
         from requests.adapters import HTTPAdapter
 
         # Determine pool size based on max_workers
-        pool_size = min(max_workers, 50)
+        pool_size = min(max_workers, 100)
 
         adapter = HTTPAdapter(
             pool_connections=pool_size,
@@ -517,7 +517,9 @@ class Archiver:
 
                     # Ensure we have a client
                     if client is None:
-                        client = tfchain.TFChain(session=self.shared_session)
+                        client = tfchain.TFChain(
+                            session=self.shared_session, use_http=True
+                        )
 
                     # Fetch the block range
                     blocks_data = self.fetch_block_range(client, start_block, end_block)
@@ -751,7 +753,7 @@ class Archiver:
             self.update_batch_size_in_metadata(con, self.batch_size)
 
         # Initialize TFChain client
-        client = tfchain.TFChain(session=self.shared_session)
+        client = tfchain.TFChain(session=self.shared_session, use_http=True)
 
         # We attempt to load the dict during init, if None it wasn't found
         if self.zstd_dict_bytes is None:
