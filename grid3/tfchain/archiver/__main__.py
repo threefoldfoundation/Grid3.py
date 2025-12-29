@@ -73,6 +73,11 @@ def main():
         help="Enable verbose batch-level logging",
         action="store_true",
     )
+    parser.add_argument(
+        "--use-http",
+        help="Use HTTP instead of WebSocket for RPC calls (better for many workers)",
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
@@ -85,6 +90,7 @@ def main():
         training_blocks=args.training_blocks,
         tfchain_url=args.tfchain_url,
         verbose=args.verbose,
+        use_http=args.use_http,
     )
 
     # Run the archiver
