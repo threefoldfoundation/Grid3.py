@@ -636,7 +636,6 @@ class Archiver:
                 "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
                 (str(block_number),),
             )
-            con.commit()
 
         def update_total_blocks_processed(con, block_count: int):
             """Increment the total blocks processed count."""
@@ -644,7 +643,6 @@ class Archiver:
                 "UPDATE kv SET value=value+? WHERE key='total_blocks_processed'",
                 (block_count,),
             )
-            con.commit()
 
         def compress_blocks(serialized_blocks: str) -> bytes:
             """Compress a batch of blocks using zstd.
@@ -673,34 +671,35 @@ class Archiver:
                 if job[0] == "archive_batch":
                     batch_data = job[1]
 
-                    # Compress the blocks
-                    compressed_data = compress_blocks(batch_data["blocks"])
+                    with con:
+                        # Compress the blocks
+                        compressed_data = compress_blocks(batch_data["blocks"])
 
-                    # Store the compressed batch
-                    con.execute(
-                        """
-                        INSERT OR REPLACE INTO archive_blocks
-                        (batch_id, start_block, end_block, compressed_data)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        (
-                            batch_data["batch_id"],
-                            batch_data["start_block"],
-                            batch_data["end_block"],
-                            compressed_data,
-                        ),
-                    )
-
-                    # Update metadata
-                    update_last_archived_block(con, batch_data["end_block"])
-                    update_total_blocks_processed(con, batch_data["block_count"])
-
-                    if verbose:
-                        print(
-                            f"Archived batch {batch_data['batch_id']}: "
-                            f"blocks {batch_data['start_block']}-{batch_data['end_block']} "
-                            f"({batch_data['block_count']} blocks)"
+                        # Store the compressed batch
+                        con.execute(
+                            """
+                            INSERT OR REPLACE INTO archive_blocks
+                            (batch_id, start_block, end_block, compressed_data)
+                            VALUES (?, ?, ?, ?)
+                            """,
+                            (
+                                batch_data["batch_id"],
+                                batch_data["start_block"],
+                                batch_data["end_block"],
+                                compressed_data,
+                            ),
                         )
+
+                        # Update metadata
+                        update_last_archived_block(con, batch_data["end_block"])
+                        update_total_blocks_processed(con, batch_data["block_count"])
+
+                        if verbose:
+                            print(
+                                f"Archived batch {batch_data['batch_id']}: "
+                                f"blocks {batch_data['start_block']}-{batch_data['end_block']} "
+                                f"({batch_data['block_count']} blocks)"
+                            )
 
             except Exception as e:
                 print(f"Error writing to database: {e}")
@@ -788,12 +787,16 @@ class Archiver:
         con = self.new_connection()
         print(f"Starting archive from scratch from block {start_block}")
 
-        # Reset metadata
-        con.execute(
-            "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
-            (str(start_block - 1),),  # Set to block before start
-        )
-        con.commit()
+        # Reset metadata in a transaction
+        with con:
+            con.execute(
+                "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
+                (str(start_block - 1),),  # Set to block before start
+            )
+            con.execute(
+                "UPDATE kv SET value=? WHERE key='total_blocks_processed'",
+                (b"0",),  # Reset total blocks count
+            )
 
         # Get current height
         current_height = self.get_current_block_height(client)
