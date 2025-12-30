@@ -80,6 +80,9 @@ class Archiver:
         con = self.new_connection()
         self.prepare_database(con)
 
+        # Check if we need to backfill total_blocks_processed from existing data
+        self._backfill_total_blocks(con)
+
         # Try to load compression dictionary from database
         self.zstd_dict_bytes: Optional[bytes] = self.load_dict_from_db(con)
 
@@ -179,7 +182,6 @@ class Archiver:
             "UPDATE archive_metadata SET value=? WHERE key='last_archived_block'",
             (str(block_number),),
         )
-        con.commit()
 
     def get_total_blocks_processed(self, con: sqlite3.Connection) -> int:
         """Get the total number of blocks processed from kv store."""
@@ -194,7 +196,37 @@ class Archiver:
             "UPDATE kv SET value=value+? WHERE key='total_blocks_processed'",
             (block_count,),
         )
-        con.commit()
+
+    def _backfill_total_blocks(self, con: sqlite3.Connection):
+        """Backfill total_blocks_processed from existing archived blocks if needed. This is to support older databases from before block counting was implemented."""
+        current_total = self.get_total_blocks_processed(con)
+        # Check if there are archived blocks but no count
+        if current_total != 0:
+            return
+
+        cursor = con.execute("SELECT COUNT(*) FROM archive_blocks").fetchone()
+
+        if cursor and cursor[0] > 0:
+            print("Found existing archived blocks but no block count. Backfilling...")
+
+            # Calculate total blocks from archive_blocks table
+            cursor = con.execute(
+                "SELECT SUM(end_block - start_block + 1) FROM archive_blocks"
+            ).fetchone()
+
+            if cursor and cursor[0]:
+                total_from_db = cursor[0]
+                print(f"Calculated {int(total_from_db)} blocks from archive_blocks")
+
+                # Update the kv store
+                with con:
+                    con.execute(
+                        "UPDATE kv SET value=? WHERE key='total_blocks_processed'",
+                        (int(total_from_db),),
+                    )
+                print("Block count backfilled successfully")
+            else:
+                print("Warning: Could not calculate block count from archive_blocks")
 
     def find_missing_blocks(self, con: sqlite3.Connection) -> List[int]:
         """Find missing blocks by comparing expected vs actual blocks.
