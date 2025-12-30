@@ -878,7 +878,6 @@ class Archiver:
         writer_proc.daemon = True
         writer_proc.start()
 
-        last_archived_at_start = self.get_last_archived_block(con)
         total_blocks_at_start = self.get_total_blocks_processed(con)
 
         print(f"Started {len(worker_threads)} worker threads")
