@@ -227,52 +227,56 @@ class Archiver:
             else:
                 print("Warning: Could not calculate block count from archive_blocks")
 
-    def find_missing_blocks(self, con: sqlite3.Connection) -> List[int]:
-        """Find missing blocks by comparing expected vs actual blocks.
+    def find_missing_batches(self, con: sqlite3.Connection) -> List[Tuple[int, int]]:
+        """Find missing batches by comparing expected vs actual batch ranges.
 
         Returns:
-            List of missing block numbers
+            List of (start_block, end_block) tuples for missing batches
         """
         highest_block = self.get_last_archived_block(con)
-        total_blocks = self.get_total_blocks_processed(con)
 
-        # If no discrepancy, return empty list
-        if total_blocks == highest_block:
+        if highest_block == 0:
             return []
 
-        # Get all archived block ranges from the database
+        # Get all archived batch ranges from the database
         cursor = con.execute(
             "SELECT start_block, end_block FROM archive_blocks ORDER BY start_block"
         )
+        existing_batches = [(start, end) for start, end in cursor]
 
-        # Build a set of all archived block numbers
-        archived_blocks = set()
-        for start, end in cursor:
-            archived_blocks.update(range(start, end + 1))
+        # Build a set of all archived batch ranges
+        existing_ranges = set()
+        for start, end in existing_batches:
+            existing_ranges.add((start, end))
 
-        # Find missing blocks in range 1 to highest_block
-        missing_blocks = []
-        for block_num in range(1, highest_block + 1):
-            if block_num not in archived_blocks:
-                missing_blocks.append(block_num)
+        # Generate expected batch ranges from 1 to highest_block
+        missing_batches = []
+        for start in range(1, highest_block + 1, self.batch_size):
+            end = min(start + self.batch_size - 1, highest_block)
+            if (start, end) not in existing_ranges:
+                missing_batches.append((start, end))
 
-        return missing_blocks
+        return missing_batches
 
     def queue_missing_blocks(self, con: sqlite3.Connection):
         """Find and queue missing blocks for processing."""
-        missing_blocks = self.find_missing_blocks(con)
+        missing_batches = self.find_missing_batches(con)
 
-        if not missing_blocks:
-            print("No missing blocks detected")
+        if not missing_batches:
+            print("No missing batches detected")
             return
 
-        print(f"Found {len(missing_blocks)} missing blocks: {missing_blocks[:10]}...")
-        if len(missing_blocks) > 10:
-            print(f"... and {len(missing_blocks) - 10} more")
+        print(
+            f"Found {len(missing_batches)} missing batches: {missing_batches[:10]}..."
+        )
+        if len(missing_batches) > 10:
+            print(f"... and {len(missing_batches) - 10} more")
 
-        # Queue missing blocks in batches
-        for block_num in missing_blocks:
-            self.block_queue.put((block_num, block_num))
+        # Queue missing batches
+        for batch_range in missing_batches:
+            self.block_queue.put(batch_range)
+
+        print(f"Queued {len(missing_batches)} batches for re-archiving")
 
     def compress_block_batch(self, blocks: List[Dict]) -> bytes:
         """Compress a batch of blocks using zstd.
