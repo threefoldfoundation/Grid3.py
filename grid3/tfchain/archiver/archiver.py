@@ -876,6 +876,7 @@ class Archiver:
         writer_proc.start()
 
         last_archived_at_start = self.get_last_archived_block(con)
+        total_blocks_at_start = self.get_total_blocks_processed(con)
 
         print(f"Started {len(worker_threads)} worker threads")
         print("Archiver running...")
@@ -904,7 +905,8 @@ class Archiver:
 
                 # Calculate ETA
                 remaining_blocks = current_height - last_archived
-                completed_blocks = last_archived - last_archived_at_start
+                total_blocks = self.get_total_blocks_processed(con)
+                completed_blocks = total_blocks - total_blocks_at_start
                 elapsed_time = time.time() - self.start_time
                 if completed_blocks > 0 and elapsed_time > 0:
                     blocks_per_second = completed_blocks / elapsed_time
