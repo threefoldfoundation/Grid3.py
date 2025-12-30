@@ -73,7 +73,6 @@ class Archiver:
         self.write_queue.cancel_join_thread()
 
         # State tracking
-        self.last_archived_block = 0
         self.running = True
 
         # Initialize database connection and load dictionary
@@ -608,8 +607,6 @@ class Archiver:
                         if batch_data:
                             # Store the compressed batch
                             self.write_queue.put(("archive_batch", batch_data))
-                            # Update last archived block
-                            self.last_archived_block = batch_data["end_block"]
 
                     # Success - break retry loop
                     break
@@ -758,18 +755,17 @@ class Archiver:
             client: TFChain client
 
         Returns:
-            Current block height, or last archived block if error occurs
+            Current block height
+
+        Raises:
+            Exception: If unable to get current block height
         """
-        try:
-            current_header = client.sub.get_block_header()
-            if current_header is None:
-                raise ValueError("No block header returned")
-            if not isinstance(current_header, dict) or "header" not in current_header:
-                raise ValueError("Invalid block header response format")
-            return current_header["header"]["number"]
-        except Exception as e:
-            print(f"Error getting current block height: {e}")
-            return self.last_archived_block  # Return last known block if error
+        current_header = client.sub.get_block_header()
+        if current_header is None:
+            raise ValueError("No block header returned")
+        if not isinstance(current_header, dict) or "header" not in current_header:
+            raise ValueError("Invalid block header response format")
+        return current_header["header"]["number"]
 
     def queue_new_batches(self, con: sqlite3.Connection, client: tfchain.TFChain):
         """Queue new batches of blocks that need to be archived.
@@ -781,7 +777,12 @@ class Archiver:
         Returns:
             Number of batches queued
         """
-        current_height = self.get_current_block_height(client)
+        try:
+            current_height = self.get_current_block_height(client)
+        except Exception as e:
+            print(f"Error getting current block height, skipping queue: {e}")
+            return 0
+
         last_archived = self.get_last_archived_block(con)
 
         print(f"Current block height: {current_height}, Last archived: {last_archived}")
@@ -831,7 +832,12 @@ class Archiver:
             )
 
         # Get current height
-        current_height = self.get_current_block_height(client)
+        try:
+            current_height = self.get_current_block_height(client)
+        except Exception as e:
+            print(f"Error getting current block height: {e}")
+            raise
+
         print(f"Current chain height: {current_height}")
         print(f"Will archive blocks {start_block} to {current_height}")
 
@@ -934,39 +940,50 @@ class Archiver:
                 # Print status
                 queue_size = self.block_queue.qsize()
                 write_queue_size = self.write_queue.qsize()
-                current_height = self.get_current_block_height(client)
-                last_archived = self.get_last_archived_block(con)
+                try:
+                    current_height = self.get_current_block_height(client)
+                    last_archived = self.get_last_archived_block(con)
 
-                # Calculate ETA
-                remaining_blocks = current_height - last_archived
-                total_blocks = self.get_total_blocks_processed(con)
-                completed_blocks = total_blocks - total_blocks_at_start
-                elapsed_time = time.time() - self.start_time
-                if completed_blocks > 0 and elapsed_time > 0:
-                    blocks_per_second = completed_blocks / elapsed_time
-                    if blocks_per_second > 0:
-                        eta_seconds = remaining_blocks / blocks_per_second
-                        eta_str = str(datetime.timedelta(seconds=int(eta_seconds)))
+                    # Calculate ETA
+                    remaining_blocks = current_height - last_archived
+                    total_blocks = self.get_total_blocks_processed(con)
+                    completed_blocks = total_blocks - total_blocks_at_start
+                    elapsed_time = time.time() - self.start_time
+                    if completed_blocks > 0 and elapsed_time > 0:
+                        blocks_per_second = completed_blocks / elapsed_time
+                        if blocks_per_second > 0:
+                            eta_seconds = remaining_blocks / blocks_per_second
+                            eta_str = str(datetime.timedelta(seconds=int(eta_seconds)))
 
+                        else:
+                            eta_str = "calculating..."
                     else:
                         eta_str = "calculating..."
-                else:
-                    eta_str = "calculating..."
 
-                print(
-                    f"{datetime.datetime.now()} | "
-                    f"Queue: {queue_size} | "
-                    f"Write Q: {write_queue_size} | "
-                    f"Workers: {len(worker_threads)} | "
-                    f"Height: {current_height} | "
-                    f"Archived: {last_archived} | "
-                    f"Total: {self.get_total_blocks_processed(con)} | "
-                    f"ETA: {eta_str}"
-                )
+                    print(
+                        f"{datetime.datetime.now()} | "
+                        f"Queue: {queue_size} | "
+                        f"Write Q: {write_queue_size} | "
+                        f"Workers: {len(worker_threads)} | "
+                        f"Height: {current_height} | "
+                        f"Archived: {last_archived} | "
+                        f"Total: {self.get_total_blocks_processed(con)} | "
+                        f"ETA: {eta_str}"
+                    )
 
-                # If queue is empty and we're caught up, just wait
-                if queue_size == 0 and current_height <= last_archived:
-                    print("Caught up with chain, waiting for new blocks...")
+                    # If queue is empty and we're caught up, just wait
+                    if queue_size == 0 and current_height <= last_archived:
+                        print("Caught up with chain, waiting for new blocks...")
+                except Exception as e:
+                    print(f"Error getting current block height for status: {e}")
+                    print(
+                        f"{datetime.datetime.now()} | "
+                        f"Queue: {queue_size} | "
+                        f"Write Q: {write_queue_size} | "
+                        f"Workers: {len(worker_threads)} | "
+                        f"Height: unknown | "
+                        f"Total: {self.get_total_blocks_processed(con)}"
+                    )
 
         except KeyboardInterrupt:
             print("\nShutting down archiver...")
