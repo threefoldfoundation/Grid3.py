@@ -16,15 +16,10 @@ AUTO_TYPES_CUTOFF = 100
 
 
 class TFChain:
-    def __init__(self, network="main", session=None, use_http=False):
-        if session is not None and not use_http:
-            raise ValueError("session parameter is only allowed when use_http=True")
-
-        if use_http:
-            if network == "main":
-                url = "https://tfchain.grid.tf"
-            else:
-                url = "https://tfchain.{}.grid.tf".format(network)
+    def __init__(self, network="main", url=None):
+        # Use custom URL if provided, otherwise construct from network
+        if url is not None:
+            pass  # Use provided URL directly
         else:
             if network == "main":
                 url = "wss://tfchain.grid.tf"
@@ -45,10 +40,6 @@ class TFChain:
             ss58_format=42,
             type_registry_preset="polkadot",
         )
-
-        # Override the session if provided (for HTTP connection pooling)
-        if session is not None:
-            self.sub.session = session
 
         self.keys = None
 
@@ -364,10 +355,7 @@ class TFChain:
             runtime_info = self.sub.get_block_runtime_version(block_hash)
             spec_version = runtime_info["specVersion"]
 
-        if (
-            spec_version > AUTO_TYPES_CUTOFF
-            or self.sub.runtime_version == spec_version
-        ):
+        if spec_version > AUTO_TYPES_CUTOFF or self.sub.runtime_version == spec_version:
             return
 
         # Build a single dict with the most up-to-date types for the given spec_version
