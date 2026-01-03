@@ -994,7 +994,7 @@ class Archiver:
             self.update_batch_size_in_metadata(con, self.batch_size)
 
         # Initialize TFChain client
-        client = tfchain.TFChain(self.tfchain_url)
+        client = tfchain.TFChain(url=self.tfchain_url)
 
         # We attempt to load the dict during init, if None it wasn't found
         if self.zstd_dict_bytes is None:
