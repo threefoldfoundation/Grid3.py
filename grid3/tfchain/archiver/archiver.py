@@ -88,6 +88,15 @@ class Archiver:
         # Close the connection as it will be reopened when needed
         con.close()
 
+    def _get_http_url(self) -> str:
+        """Convert WebSocket URL to HTTP URL for SubstrateRPC."""
+        url = self.tfchain_url
+        if url.startswith("wss://"):
+            return url.replace("wss://", "https://", 1)
+        elif url.startswith("ws://"):
+            return url.replace("ws://", "http://", 1)
+        return url  # Already HTTP
+
     def new_connection(self) -> sqlite3.Connection:
         """Create a new database connection."""
         con = sqlite3.connect(self.db_path, timeout=self.db_timeout)
@@ -550,6 +559,42 @@ class Archiver:
 
         return list(reversed(blocks_data))
 
+    def fetch_block_range_raw(
+        self, rpc: tfchain.SubstrateRPC, start_block: int, end_block: int
+    ) -> List[Tuple[str, Dict, Optional[str], int]]:
+        """Fetch raw block data using parentHash walk (saves RPC calls).
+
+        Args:
+            rpc: SubstrateRPC client for raw HTTP requests
+            start_block: Starting block number
+            end_block: Ending block number
+
+        Returns:
+            List of tuples (block_hash, block_data, events_raw, block_number)
+        """
+        blocks_raw = []
+
+        # Get the end block first (requires hash lookup)
+        block_hash = rpc.get_block_hash(end_block)
+        if block_hash is None:
+            raise ValueError(f"Block {end_block} not found")
+        block_data = rpc.get_block(block_hash)
+
+        # Walk backwards via parentHash
+        while block_data is not None:
+            block_number = int(block_data["block"]["header"]["number"], 16)
+            events_raw = rpc.get_events_raw(block_hash)
+            blocks_raw.append((block_hash, block_data, events_raw, block_number))
+
+            if block_number == start_block:
+                break
+
+            # Get parent block using parentHash (no hash lookup needed)
+            block_hash = block_data["block"]["header"]["parentHash"]
+            block_data = rpc.get_block(block_hash)
+
+        return list(reversed(blocks_raw))  # Return in ascending order
+
     def process_block_batch(
         self, blocks_data: List[Tuple[int, Dict]]
     ) -> Optional[Dict]:
@@ -580,9 +625,34 @@ class Archiver:
             "block_count": len(blocks),
         }
 
+    def process_block_batch_raw(
+        self, blocks_raw: List[Tuple[str, Dict, Optional[str], int]]
+    ) -> Optional[Dict]:
+        """Process a batch of raw blocks for archiving.
+
+        Args:
+            blocks_raw: List of tuples (block_hash, block_data, events_raw, block_number)
+
+        Returns:
+            Dictionary containing batch data with raw blocks for decoding in writer process
+        """
+        if not blocks_raw:
+            return None
+
+        start_block = blocks_raw[0][3]
+        end_block = blocks_raw[-1][3]
+
+        return {
+            "batch_id": start_block // self.batch_size,
+            "start_block": start_block,
+            "end_block": end_block,
+            "blocks_raw": blocks_raw,
+            "block_count": len(blocks_raw),
+        }
+
     def archive_batch_worker(self):
-        """Worker thread that processes block batches for archiving."""
-        client = None
+        """Worker thread that fetches raw block data for archiving."""
+        rpc = None
         max_retries = 3
 
         while self.running:
@@ -595,21 +665,21 @@ class Archiver:
             for attempt in range(max_retries):
                 try:
                     if self.verbose:
-                        print(f"Processing batch: blocks {start_block}-{end_block}")
+                        print(f"Fetching batch: blocks {start_block}-{end_block}")
 
-                    # Ensure we have a client
-                    if client is None:
-                        client = tfchain.TFChain(use_http=True)
+                    # Ensure we have an RPC client
+                    if rpc is None:
+                        rpc = tfchain.SubstrateRPC(url=self._get_http_url())
 
-                    # Fetch the block range
-                    blocks_data = self.fetch_block_range(client, start_block, end_block)
+                    # Fetch raw block data
+                    blocks_raw = self.fetch_block_range_raw(rpc, start_block, end_block)
 
-                    if blocks_data:
-                        # Process the batch
-                        batch_data = self.process_block_batch(blocks_data)
+                    if blocks_raw:
+                        # Process the batch (raw data)
+                        batch_data = self.process_block_batch_raw(blocks_raw)
 
                         if batch_data:
-                            # Store the compressed batch
+                            # Send raw batch to writer for decoding and storage
                             self.write_queue.put(("archive_batch", batch_data))
 
                     # Success - break retry loop
@@ -618,34 +688,34 @@ class Archiver:
                 except Exception as e:
                     error_msg = str(e)
 
-                    # Check for client state corruption errors
-                    is_client_error = (
-                        "Decoder class" in error_msg
-                        or "portable_registry" in error_msg
-                        or client is None
-                        or client.sub is None
+                    # Check for connection/RPC errors
+                    is_connection_error = (
+                        "Connection" in error_msg
+                        or "Timeout" in error_msg
+                        or "timeout" in error_msg
+                        or rpc is None
                     )
 
-                    if is_client_error and attempt < max_retries - 1:
+                    if is_connection_error and attempt < max_retries - 1:
                         print(
-                            f"Client error detected (attempt {attempt + 1}/{max_retries}): {e}"
+                            f"RPC error detected (attempt {attempt + 1}/{max_retries}): {e}"
                         )
                         print(
-                            f"Recreating TFChain client for batch {start_block}-{end_block}"
+                            f"Recreating RPC client for batch {start_block}-{end_block}"
                         )
-                        client = None
+                        rpc = None
                         # Wait a bit before retrying
                         time.sleep(1)
                     else:
                         # Other error or last retry failed
-                        print(f"Error processing batch {start_block}-{end_block}: {e}")
+                        print(f"Error fetching batch {start_block}-{end_block}: {e}")
                         # Re-queue the batch for retry
                         self.block_queue.put(batch_range)
                         break
 
     @staticmethod
-    def db_writer(write_queue, db_path, db_timeout, verbose, dict_bytes):
-        """Database writer process that handles writing archive batches.
+    def db_writer(write_queue, db_path, db_timeout, verbose, dict_bytes, tfchain_url):
+        """Database writer process that handles decoding and writing archive batches.
 
         Args:
             write_queue: Queue for receiving write jobs
@@ -653,6 +723,7 @@ class Archiver:
             db_timeout: SQLite connection timeout
             verbose: Whether to print verbose output
             dict_bytes: Zstd dictionary bytes for compression
+            tfchain_url: HTTP URL for TFChain client (used for decoding)
         """
         con = sqlite3.connect(db_path, timeout=db_timeout)
         con.execute("PRAGMA journal_mode=wal")
@@ -662,6 +733,9 @@ class Archiver:
             zstd_dict = zstd.ZstdDict(dict_bytes)
         else:
             zstd_dict = None
+
+        # Create TFChain client for decoding raw blocks
+        client = tfchain.TFChain(url=tfchain_url)
 
         def update_last_archived_block(con, block_number):
             """Update the last archived block number in metadata."""
@@ -677,23 +751,59 @@ class Archiver:
                 (block_count,),
             )
 
-        def compress_blocks(serialized_blocks: str) -> bytes:
-            """Compress a batch of blocks using zstd.
+        def serialize_default(obj):
+            """Default serialization function for objects that aren't JSON serializable."""
+            if hasattr(obj, "serialize"):
+                return obj.serialize()
+            elif hasattr(obj, "__dict__"):
+                return obj.__dict__
+            else:
+                return str(obj)
+
+        def compress_blocks(blocks: list) -> bytes:
+            """Serialize and compress a batch of blocks using zstd.
 
             Args:
-                serialized_blocks: JSON string containing block data
+                blocks: List of block dictionaries
 
             Returns:
                 Compressed bytes
             """
-            # Encode to bytes
-            serialized = serialized_blocks.encode()
+            # Serialize to JSON
+            serialized = json.dumps(blocks, default=serialize_default).encode()
             # Compress with zstd, using dictionary if available
             if zstd_dict is not None:
                 compressed = zstd.compress(serialized, zstd_dict=zstd_dict)
             else:
                 compressed = zstd.compress(serialized)
             return compressed
+
+        def decode_blocks(blocks_raw: list) -> list:
+            """Decode a list of raw blocks.
+
+            Args:
+                blocks_raw: List of (block_hash, block_data, events_raw, block_number) tuples
+
+            Returns:
+                List of decoded block dictionaries
+            """
+            decoded_blocks = []
+            for block_hash, block_data, events_raw, block_number in blocks_raw:
+                try:
+                    decoded = client.decode_block_raw(
+                        block_hash=block_hash,
+                        block_data=block_data,
+                        events_raw=events_raw,
+                        block_number=block_number,
+                    )
+                    decoded_blocks.append(decoded)
+                except Exception as e:
+                    print(f"Warning: Error decoding block {block_number}: {e}")
+                    # Store raw data on decode failure
+                    block_data["events"] = events_raw
+                    block_data["decode_error"] = str(e)
+                    decoded_blocks.append(block_data)
+            return decoded_blocks
 
         while True:
             job = write_queue.get()
@@ -705,8 +815,11 @@ class Archiver:
                     batch_data = job[1]
 
                     with con:
-                        # Compress the blocks
-                        compressed_data = compress_blocks(batch_data["blocks"])
+                        # Decode raw blocks
+                        decoded_blocks = decode_blocks(batch_data["blocks_raw"])
+
+                        # Compress the decoded blocks
+                        compressed_data = compress_blocks(decoded_blocks)
 
                         # Store the compressed batch
                         con.execute(
@@ -881,7 +994,7 @@ class Archiver:
             self.update_batch_size_in_metadata(con, self.batch_size)
 
         # Initialize TFChain client
-        client = tfchain.TFChain(use_http=True)
+        client = tfchain.TFChain(self.tfchain_url)
 
         # We attempt to load the dict during init, if None it wasn't found
         if self.zstd_dict_bytes is None:
@@ -915,6 +1028,7 @@ class Archiver:
                 self.db_timeout,
                 self.verbose,
                 self.zstd_dict_bytes,
+                self._get_http_url(),
             ),
         )
         writer_proc.daemon = True
